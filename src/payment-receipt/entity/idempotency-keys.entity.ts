@@ -12,6 +12,9 @@ export class IdempotencyKey {
   @Column({ nullable: true })
   requestPath: string;
 
+  @Column({ type: 'varchar', nullable: false })
+  requestHash: string;
+
   @Column()
   operation: 'processing' | 'success' | 'failure';
 

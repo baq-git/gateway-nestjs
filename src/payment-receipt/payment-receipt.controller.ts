@@ -83,7 +83,6 @@ export class PaymentReceiptController {
     await queryRunner.startTransaction();
 
     try {
-      console.log('idempotencyKey', idempotencyKey);
       const idempotencyCheckResult =
         await this.idempotencyService.ensureCreatedAndCheckIdempotencyKey(
           request,

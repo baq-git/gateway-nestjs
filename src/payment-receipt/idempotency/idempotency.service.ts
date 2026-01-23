@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueryRunner } from 'typeorm/browser';
 import { Request } from 'express';
 import { PaymentReceiptResponseSuccessDto } from 'src/dtos/payment-receipt/payment-receipt.dto';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class IdempotencyService {
@@ -12,6 +13,37 @@ export class IdempotencyService {
     @InjectRepository(IdempotencyKey)
     private readonly idempotencyRepository: Repository<IdempotencyKey>,
   ) {}
+
+  private async payloadHash(payload: any) {
+    console.log('payloadHash', payload);
+    const hashedPayload = JSON.stringify(payload);
+    return createHash('sha256').update(hashedPayload).digest('hex');
+  }
+
+  private async compareHash(
+    request: Request,
+    existingIdempotencyEntity: IdempotencyKey,
+  ) {
+    const currentPayloadHash = await this.payloadHash(
+      JSON.stringify({
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+      }),
+    );
+
+    if (existingIdempotencyEntity.requestHash !== currentPayloadHash) {
+      throw new HttpException(
+        'Bad Request: Idempotency-Key reused with different payload',
+        HttpStatus.BAD_REQUEST,
+        {
+          cause: {
+            message: 'Payload mismatch - request body/method/path has changed',
+          },
+        },
+      );
+    }
+  }
 
   async ensureCreatedAndCheckIdempotencyKey(
     request: Request,
@@ -22,6 +54,13 @@ export class IdempotencyService {
       // Use ON CONFLICT DO NOTHING when:
       // You want the best performance and only care about
       // whether the data is in the table or not.
+      const requestHash = await this.payloadHash(
+        JSON.stringify({
+          method: request.method,
+          url: request.url,
+          body: request.body,
+        }),
+      );
 
       const onConflictInserted = await this.idempotencyRepository
         .createQueryBuilder()
@@ -30,6 +69,7 @@ export class IdempotencyService {
         .values({
           key: idempotencyKey,
           requestPath: request.url,
+          requestHash,
           operation: 'processing',
           expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 3 minutes
         })
@@ -72,6 +112,8 @@ export class IdempotencyService {
 
         switch (existingIdempotencyEntity.operation) {
           case 'success':
+            await this.compareHash(request, existingIdempotencyEntity);
+
             return {
               idempotencyMetadata: {
                 statusCode: existingIdempotencyEntity.responseStatus,
@@ -85,6 +127,8 @@ export class IdempotencyService {
             };
 
           case 'processing':
+            await this.compareHash(request, existingIdempotencyEntity);
+
             if (existingIdempotencyEntity.expiresAt.getTime() < Date.now()) {
               // expired
               const expiredAt = existingIdempotencyEntity.expiresAt;
@@ -141,6 +185,8 @@ export class IdempotencyService {
             }
 
           case 'failure':
+            await this.compareHash(request, existingIdempotencyEntity);
+
             return {
               idempotencyMetadata: {
                 statusCode: HttpStatus.CONFLICT,

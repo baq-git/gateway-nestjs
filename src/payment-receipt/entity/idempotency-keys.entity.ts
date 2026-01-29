@@ -1,5 +1,7 @@
 import { Column, Entity, ManyToOne, PrimaryColumn } from 'typeorm';
 import { PaymentReceipt } from './payment-receipt.entity';
+import { PaymentReceiptResponseSuccessDto } from 'src/dtos/payment-receipt/payment-receipt.dto';
+import { HttpException } from '@nestjs/common';
 
 @Entity('idempotency_keys')
 export class IdempotencyKey {
@@ -22,7 +24,7 @@ export class IdempotencyKey {
   responseStatus?: number;
 
   @Column({ type: 'jsonb', nullable: true })
-  responseBody?: any;
+  responseBody?: PaymentReceiptResponseSuccessDto | HttpException;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;

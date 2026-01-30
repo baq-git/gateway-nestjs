@@ -38,7 +38,7 @@ export class PaymentReceipt {
   currency: string;
 
   @Column({
-    type: 'enum',
+    type: 'simple-enum',
     enum: PaymentReceiptStatus,
     default: PaymentReceiptStatus.PENDING,
   })
@@ -56,28 +56,28 @@ export class PaymentReceipt {
   @Column({ nullable: true })
   refundId: string;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   pendingAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   authorizedAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   capturedAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   voidedAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   refundedAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   expiresAt: Date;
 
-  @Column({ type: 'timestamptz', default: () => 'NOW()' })
+  @Column({ type: 'datetime', default: () => 'NOW()' })
   createdAt: Date;
 
-  @Column({ type: 'timestamptz', default: () => 'NOW()' })
+  @Column({ type: 'datetime', default: () => 'NOW()' })
   updatedAt: Date;
 
   @OneToMany(

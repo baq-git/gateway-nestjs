@@ -23,12 +23,12 @@ export class IdempotencyKey {
   @Column({ type: 'int', nullable: true })
   responseStatus?: number;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   responseBody?: PaymentReceiptResponseSuccessDto | HttpException;
 
-  @Column({ type: 'timestamptz', default: () => 'NOW()' })
+  @Column({ type: 'datetime', default: () => 'NOW()' })
   createdAt: Date;
 
-  @Column({ type: 'timestamptz' })
+  @Column({ type: 'datetime' })
   expiresAt: Date;
 }

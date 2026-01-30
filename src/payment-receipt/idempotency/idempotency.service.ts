@@ -10,7 +10,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { type QueryRunner } from 'typeorm/browser';
 import { Request } from 'express';
 import { PaymentReceiptResponseSuccessDto } from 'src/dtos/payment-receipt/payment-receipt.dto';
-import { createHash } from 'crypto';
+import { computeRequestFingerprint } from '../utils/requestHash';
+
 @Injectable()
 export class IdempotencyService {
   constructor(
@@ -38,7 +39,9 @@ export class IdempotencyService {
     idempotencyKey: string,
   ) {
     const queryRunner = request.queryRunner; // request hash to prevent reply attack
-    const requestHash = this.computeRequestFingerprint(request); // Use ON CONFLICT DO NOTHING when:
+    const requestHash = computeRequestFingerprint(request);
+
+    // Use ON CONFLICT DO NOTHING when:
     // YOU WANT THE BEST PERFORMANCE AND ONLY CARE ABOUT
     // WHETHER THE DATA IS IN THE TABLE OR NOT.
     const insertQuery = queryRunner.manager
@@ -154,40 +157,5 @@ export class IdempotencyService {
       operation: result.operation,
       payload: result,
     };
-  }
-  private computeRequestFingerprint(request: RawBodyRequest<Request>) {
-    const hash = createHash('sha256');
-    const method = (request.method || 'POST').toUpperCase();
-    hash.update(method);
-    hash.update('\0');
-    hash.update(request.method + request.path);
-    hash.update(request.path || '');
-    hash.update('\0');
-    const rawBody = request.rawBody;
-    if (Buffer.isBuffer(rawBody)) {
-      hash.update(rawBody);
-    } else {
-      console.warn('RawBody is not Buffer:', typeof rawBody);
-      hash.update(''); // fallback empty
-    }
-    const fingerprint = hash.digest('hex');
-    return fingerprint;
-  }
-  private compareHash(
-    request: RawBodyRequest<Request>,
-    existingIdempotencyEntity: IdempotencyKey,
-  ) {
-    const currentPayloadHash = this.computeRequestFingerprint(request);
-    if (existingIdempotencyEntity.requestHash !== currentPayloadHash) {
-      throw new HttpException(
-        'Bad Request: Idempotency-Key reused with different payload',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        {
-          cause: {
-            message: 'Payload mismatch - request body/method/path has changed',
-          },
-        },
-      );
-    }
   }
 }

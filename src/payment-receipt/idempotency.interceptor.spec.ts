@@ -1,7 +1,7 @@
-import { IdempotencyInterceptor } from './idempotency.interceptor';
+import { DataSource } from 'typeorm';
+import { IdempotencyService } from './idempotency/idempotency.service';
 
-// describe('IdempotencyInterceptor', () => {
-//   it('should be defined', () => {
-//     expect(new IdempotencyInterceptor()).toBeDefined();
-//   });
-// });
+describe('IdempotencyInterceptor', () => {
+  let idempotencyService: IdempotencyService;
+  let dataSource: DataSource;
+});

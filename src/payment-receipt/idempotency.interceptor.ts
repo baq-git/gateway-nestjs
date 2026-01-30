@@ -9,12 +9,11 @@ import {
   RawBodyRequest,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
-import { createHash } from 'crypto';
 import { Request, Response } from 'express';
 import { catchError, concatMap, finalize, Observable, of } from 'rxjs';
-import { IdempotencyKey } from './entity/idempotency-keys.entity';
 import { DataSource, QueryRunner } from 'typeorm';
 import { IdempotencyService } from './idempotency/idempotency.service';
+import { compareHash } from './utils/requestHash';
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -131,9 +130,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
           operationStatusCode[existingIdempotencyEntity.operation];
         response.status(statusCode);
 
-        if (existingIdempotencyEntity.operation === 'processing') {
-          this.compareHash(request, existingIdempotencyEntity);
+        compareHash(request, existingIdempotencyEntity);
 
+        if (existingIdempotencyEntity.operation === 'processing') {
           if (existingIdempotencyEntity.expiresAt.getTime() < Date.now()) {
             const deleted = await this.idempotencyService.deleteByKey(
               existingIdempotencyEntity.key,
@@ -199,48 +198,6 @@ export class IdempotencyInterceptor implements NestInterceptor {
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
-    }
-  }
-
-  private computeRequestFingerprint(request: RawBodyRequest<Request>) {
-    const hash = createHash('sha256');
-
-    const method = (request.method || 'POST').toUpperCase();
-
-    hash.update(method);
-    hash.update('\0');
-    hash.update(request.method + request.path);
-    hash.update(request.path || '');
-    hash.update('\0');
-
-    const rawBody = request.rawBody;
-    if (Buffer.isBuffer(rawBody)) {
-      hash.update(rawBody);
-    } else {
-      // should have log warning
-      hash.update(''); // fallback empty
-    }
-
-    const fingerprint = hash.digest('hex');
-    return fingerprint;
-  }
-
-  private compareHash(
-    request: RawBodyRequest<Request>,
-    existingIdempotencyEntity: IdempotencyKey,
-  ) {
-    const currentPayloadHash = this.computeRequestFingerprint(request);
-
-    if (existingIdempotencyEntity.requestHash !== currentPayloadHash) {
-      throw new HttpException(
-        'Bad Request: Idempotency-Key reused with different payload',
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        {
-          cause: {
-            message: 'Payload mismatch - request body/method/path has changed',
-          },
-        },
-      );
     }
   }
 }

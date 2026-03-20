@@ -22,6 +22,7 @@
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.12",
+    "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.12",
     "@nestjs/platform-express": "^11.1.12",
     "@nestjs/swagger": "^11.2.5",
@@ -29,14 +30,12 @@
     "@types/axios": "^0.14.4",
     "@types/lodash": "^4.17.23",
     "axios": "^1.13.4",
-    "better-sqlite3": "^12.6.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "lodash": "^4.17.23",
     "pg": "^8.17.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "sqlite3": "^5.1.7",
     "typeorm": "^0.3.28",
     "uuid": "^13.0.0"
   },
@@ -71,6 +70,15 @@
       "json",
       "ts"
     ],
+    "moduleNameMapper": {
+      "^@domain/(.*)$": "<rootDir>/payments/domain/$1",
+      "^@common/(.*)$": "<rootDir>/payments/common/$1",
+      "^@infrastructure/(.*)$": "<rootDir>/payments/infrastructure/$1",
+      "^@presentation/(.*)$": "<rootDir>/payments/presentation/$1",
+      "^@application/(.*)$": "<rootDir>/payments/application/$1",
+      "^@shared/(.*)$": "<rootDir>/payments/common/$1",
+      "^@test/(.*)$": "<rootDir>/test/$1"
+    },
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {

@@ -1,11 +1,10 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { MockbankModule } from './mockbank/mockbank.module';
-import { PaymentReceiptModule } from './payment-receipt/payment-receipt.module';
-import { PaymentReceipt } from './payment-receipt/entity/payment-receipt.entity';
-import { IdempotencyKey } from './payment-receipt/entity/idempotency-keys.entity';
+import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
+import { PaymentReceipt } from '@domain/entities/payment.entity';
+import { MockbankModule } from '@infrastructure/adapters/bank/mockbank/mockbank.module';
+import { PaymentReceiptModule } from 'payments/payment.module';
 
 @Module({
   imports: [
@@ -25,7 +24,7 @@ import { IdempotencyKey } from './payment-receipt/entity/idempotency-keys.entity
     MockbankModule,
     PaymentReceiptModule,
   ],
-  controllers: [AppController],
+  controllers: [],
   providers: [AppService],
 })
 export class AppModule implements NestModule {

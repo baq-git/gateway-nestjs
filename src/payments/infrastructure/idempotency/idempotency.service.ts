@@ -1,184 +1,139 @@
 import {
+  BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
-  type RawBodyRequest,
+  Scope,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { type QueryRunner } from 'typeorm/browser';
-import { Request } from 'express';
-import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
-import { PaymentReceiptResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
-import { computeRequestFingerprint } from '@shared/utils/requestHash';
+import { QueryRunner } from 'typeorm';
+import { IdempotencyKeyEntity } from '@domain/entities/idempotency-keys.entity';
+import { type Request } from 'express';
+import { REQUEST } from '@nestjs/core';
+import { computeRequestFingerprint } from '@common/utils/requestHash';
 
-@Injectable()
+@Injectable({ scope: Scope.REQUEST })
 export class IdempotencyService {
   constructor(
-    @InjectRepository(IdempotencyKey)
-    private readonly idempotencyRepository: Repository<IdempotencyKey>,
+    @InjectRepository(IdempotencyKeyEntity)
+    private readonly idempotencyRepository: Repository<IdempotencyKeyEntity>,
+    @Inject(REQUEST)
+    private request: Request,
   ) {}
 
-  async insertIdempotencyEntity(
-    request: RawBodyRequest<Request & { queryRunner: QueryRunner }>,
-    idempotencyKey: string,
-  ) {
-    const queryRunner = request.queryRunner; // request hash to prevent reply attack
-    const requestHash = computeRequestFingerprint(request);
-
-    // Use ON CONFLICT DO NOTHING when:
-    // YOU WANT THE BEST PERFORMANCE AND ONLY CARE ABOUT
-    // WHETHER THE DATA IS IN THE TABLE OR NOT.
-    const insertQuery = queryRunner.manager
-      .createQueryBuilder()
-      .insert()
-      .into(IdempotencyKey)
-      .values({
-        key: idempotencyKey,
-        requestPath: request.path,
-        requestHash,
-        responseStatus: HttpStatus.CREATED,
-        operation: 'processing',
-        expiresAt: new Date(Date.now() + 1 * 60 * 60 * 1000), //  1h
-      })
-      .orIgnore()
-      .returning('*');
-
-    const result = await insertQuery.execute();
-    if (result.raw.length === 0) {
-      const existing = await queryRunner.manager
-        .getRepository(IdempotencyKey)
-        .createQueryBuilder('ik')
-        .setLock('pessimistic_write')
-        .where('ik.key = :key', { key: idempotencyKey })
-        .getOneOrFail();
-
-      if (existing.requestHash !== requestHash) {
-        throw new HttpException(
-          'Idempotency-Key reused with different payload',
-          HttpStatus.UNPROCESSABLE_ENTITY,
-        );
-      }
-
-      return { alreadyExists: true, entity: existing };
-    }
-    return { inserted: true, entity: result.raw[0] };
-  }
-
-  async findOneByKey(idempotencyKey: string, queryRunner: QueryRunner) {
-    return queryRunner.manager.getRepository(IdempotencyKey).findOne({
+  async getStatus(idempotencyKey: string) {
+    const idkEntity = await this.idempotencyRepository.findOne({
       where: {
         key: idempotencyKey,
       },
-      lock: {
-        mode: 'pessimistic_write',
+    });
+
+    return {
+      status: idkEntity?.operation,
+      body: idkEntity?.responseBody,
+    };
+  }
+
+  async findByKey(idempotencyKey: string) {
+    if (
+      !idempotencyKey ||
+      typeof idempotencyKey !== 'string' ||
+      idempotencyKey.trim().length === 0
+    ) {
+      throw new BadRequestException(
+        'Idempotency-Key cannot be empty or whitespace',
+      );
+    }
+
+    return await this.idempotencyRepository.findOne({
+      where: {
+        key: idempotencyKey,
       },
     });
   }
 
-  async deleteByKey(key: string, queryRunner: QueryRunner) {
-    const idempotencyEntity = await queryRunner.manager
-      .getRepository(IdempotencyKey)
-      .findOne({
-        where: {
-          key,
-        },
-        lock: {
-          mode: 'pessimistic_write',
-        },
-      });
+  async createOrLock(idempotencyKey: string) {
+    const queryRunner: QueryRunner = this.request['queryRunner'];
+    const requestHash = computeRequestFingerprint(this.request);
 
-    if (!idempotencyEntity) {
-      throw new HttpException(
-        'Idempotency Entity not found',
-        HttpStatus.NOT_FOUND,
-        {
-          cause: 'Idempotency Entity not found',
-        },
-      );
-    }
+    let lockedIdempotencyEntity = await queryRunner.manager
+      .createQueryBuilder(IdempotencyKeyEntity, 'ik')
+      .setLock('pessimistic_write')
+      .where('idempotency_keys = :key', { key: idempotencyKey })
+      .getOne();
 
-    return queryRunner.manager.delete(IdempotencyKey, idempotencyEntity);
-  }
+    if (lockedIdempotencyEntity) {
+      const { operation } = lockedIdempotencyEntity;
+      switch (operation) {
+        case 'processing':
+          throw new HttpException(
+            `Conflict: Request rejected. Idempotency key ${idempotencyKey} is associated with a processing state`,
+            HttpStatus.CONFLICT,
+            {
+              cause: `Resource lock contention: Transaction ${idempotencyKey} is currently locked by another process.`,
+            },
+          );
+        case 'success':
+          throw new ConflictException('Request already succeeded.');
+        case 'failure':
+          // retry
+          console.log('should retry');
 
-  async updateToSuccessIdempotency(
-    idempotencyKey: string,
-    result: PaymentReceiptResponseSuccessDto,
-    queryRunner: QueryRunner,
-  ) {
-    try {
-      const existingIdempotencyEntity = await queryRunner.manager
-        .getRepository(IdempotencyKey)
-        .findOne({
-          where: {
-            key: idempotencyKey,
-          },
-          lock: {
-            mode: 'pessimistic_write',
-          },
-        });
-      if (!existingIdempotencyEntity) {
-        throw new HttpException(
-          'Idempotency Entity not found',
-          HttpStatus.NOT_FOUND,
-          {
-            cause:
-              'Idempotency Entity not found when updateToSuccessIdempotency',
-          },
-        );
+        default:
+          throw new HttpException(
+            'Request is unknow operation',
+            HttpStatus.BAD_REQUEST,
+            { cause: 'Unknow operation status' },
+          );
       }
-      existingIdempotencyEntity.responseBody = result;
-      existingIdempotencyEntity.responseStatus =
-        result.statusCode || HttpStatus.CREATED;
-      existingIdempotencyEntity.operation = 'success';
-      await queryRunner.manager.save(existingIdempotencyEntity);
-      return {
-        statusText:
-          'Idempotency Entity operation update to success successfully',
-        operation: existingIdempotencyEntity.operation,
-        data: existingIdempotencyEntity,
-      };
-    } catch (err) {
-      throw err;
+    } else {
+      lockedIdempotencyEntity = queryRunner.manager.create(
+        IdempotencyKeyEntity,
+        {
+          key: idempotencyKey,
+          requestPath: this.request.path,
+          operation: 'processing',
+          requestHash: requestHash,
+          responseStatus: HttpStatus.CREATED,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      );
+
+      await queryRunner.manager.save(lockedIdempotencyEntity);
+    }
+
+    return lockedIdempotencyEntity;
+  }
+
+  async saveResponse(idempotencyKey: string, result: any) {
+    const queryRunner: QueryRunner = this.request['queryRunner'];
+
+    const existingIdempotencyKey = await queryRunner.manager
+      .createQueryBuilder(IdempotencyKeyEntity, 'ik')
+      .setLock('pessimistic_write')
+      .where('idempotency_keys = :key', { key: idempotencyKey })
+      .getOne();
+
+    if (existingIdempotencyKey) {
+      existingIdempotencyKey.operation = 'success';
+      existingIdempotencyKey.responseBody = result;
+      existingIdempotencyKey.responseStatus = 200;
+      await queryRunner.manager.save(existingIdempotencyKey);
     }
   }
 
-  async updateToFailureIdempotency(
-    idempotencyKey: string,
-    error: HttpException,
-    queryRunner: QueryRunner,
-  ) {
-    const existingIdempotencyEntity = await queryRunner.manager
-      .getRepository(IdempotencyKey)
-      .findOne({
-        where: {
-          key: idempotencyKey,
-        },
-        lock: {
-          mode: 'pessimistic_write',
-        },
-      });
-    if (!existingIdempotencyEntity) {
-      throw new HttpException(
-        'Idempotency Entity not found',
-        HttpStatus.NOT_FOUND,
-        {
-          cause: 'Idempotency Entity not found when updateToFailureIdempotency',
-        },
-      );
-    }
-    existingIdempotencyEntity.responseBody = error;
-    existingIdempotencyEntity.responseStatus =
-      error.getStatus() || HttpStatus.INTERNAL_SERVER_ERROR;
-    existingIdempotencyEntity.operation = 'failure';
-    const result = await this.idempotencyRepository.save(
-      existingIdempotencyEntity,
+  async saveError(idempotencyKey: string, error: any) {
+    await this.idempotencyRepository.update(
+      { key: idempotencyKey },
+      {
+        operation: 'failure',
+        responseBody: error.response || error.message,
+        responseStatus: error.status || 500,
+        updateAt: new Date(),
+      },
     );
-    return {
-      statusText:
-        'Idempotency Entity operation update to failure successfully - return failure response body',
-      operation: result.operation,
-      payload: result,
-    };
   }
 }

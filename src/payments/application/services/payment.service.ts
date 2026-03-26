@@ -3,102 +3,81 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { lastValueFrom } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
-import { QueryRunner } from 'typeorm/browser';
 import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
-import {
-  PaymentReceipt,
-  PaymentReceiptStatus,
-} from '@domain/entities/payment.entity';
+import { Payment, PaymentStatus } from '@domain/entities/payment.entity';
 import { AuthorizeService } from '@infrastructure/adapters/bank/mockbank/services/authorize.service';
 import { CreateAuthorizePaymentRequestDto } from '@presentation/dtos/authorize-payment.dto';
-import { PaymentReceiptResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
+import { PaymentResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
+import { type Request } from 'express';
+import { REQUEST } from '@nestjs/core';
+import { QueryRunner } from 'typeorm/browser';
 
 @Injectable()
-export class PaymentReceiptService {
+export class PaymentService {
   constructor(
-    @InjectRepository(PaymentReceipt)
-    private readonly paymentReceiptRepository: Repository<PaymentReceipt>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
+    @Inject(REQUEST)
+    private request: Request,
+
+    // services
     @Inject(AuthorizeService)
     private readonly authorizeService: AuthorizeService,
-
-    // private dataSource: DataSource,
   ) {}
 
   getHeath() {
     return this.authorizeService.getHealth();
   }
 
-  async authorizePaymentReceipt(
-    queryRunner: QueryRunner,
+  async authorizePayment(
     data: CreateAuthorizePaymentRequestDto & { orderId: string },
     idempotencyKey: string,
-  ): Promise<PaymentReceiptResponseSuccessDto> {
+  ): Promise<PaymentResponseSuccessDto> {
     try {
+      const queryRunner: QueryRunner = this.request['queryRunner'];
+
       const { amount, cardNumber, cvv, expiryMonth, expiryYear, orderId } =
         data;
 
-      const authResponse = await lastValueFrom(
-        this.authorizeService.authorizations(
-          { amount, cardNumber, cvv, expiryMonth, expiryYear },
-          idempotencyKey,
-        ),
-      ).catch((error) => {
-        throw error;
-      });
+      // const authResponse = await lastValueFrom(
+      //   this.authorizeService.authorizations(
+      //     { amount, cardNumber, cvv, expiryMonth, expiryYear },
+      //     idempotencyKey,
+      //   ),
+      // ).catch((error) => {
+      //   throw error;
+      // });
 
-      const payloadPaymentReceipt = this.paymentReceiptRepository.create({
-        id: uuidv4(),
-        orderId: orderId,
-        cardNumber,
-        amount,
-        currency: 'USD',
-        pendingAt: new Date(),
-        state: PaymentReceiptStatus.PENDING,
-      });
+      // const payloadPayment = this.paymentRepository.create({
+      //   id: uuidv4(),
+      //   orderId: orderId,
+      //   cardNumber,
+      //   amount,
+      //   currency: 'USD',
+      //   pendingAt: new Date(),
+      //   state: PaymentStatus.PENDING,
+      // });
 
-      const savedPaymentReceipt = await this.paymentReceiptRepository.save(
-        payloadPaymentReceipt,
-      );
+      // const savedPayment = await this.paymentRepository.save(payloadPayment);
 
-      const paymentReceipt = await queryRunner.manager
-        .createQueryBuilder(PaymentReceipt, 'pr')
-        .setLock('pessimistic_write')
-        .where('pr.id = :id', { id: savedPaymentReceipt.id })
-        .getOneOrFail();
+      // const payment = await queryRunner.manager
+      //   .createQueryBuilder(Payment, 'pr')
+      //   .setLock('pessimistic_write')
+      //   .where('pr.id = :id', { id: savedPayment.id })
+      //   .getOneOrFail();
 
-      if (paymentReceipt.state !== PaymentReceiptStatus.PENDING) {
-        throw new HttpException(
-          'Rejected: Payment Receipt is not in pending state',
-          HttpStatus.BAD_REQUEST,
-          {
-            cause: {
-              statusCode: HttpStatus.BAD_REQUEST,
-              statusText: 'Rejected: Payment Receipt is not in pending state',
-              data: {
-                payload: paymentReceipt,
-              },
-            },
-          },
-        );
-      }
+      // await queryRunner.manager.getRepository(IdempotencyKey)
+      // .update(idempotencyKey, {
+      //   payment: payment,
+      // });
 
-      paymentReceipt.authorizationId = authResponse.data.authorizationId;
-      paymentReceipt.authorizedAt = new Date();
-      paymentReceipt.state = PaymentReceiptStatus.AUTHORIZED;
+      // await queryRunner.manager.save(payment);
 
-      await queryRunner.manager
-        .getRepository(IdempotencyKey)
-        .update(idempotencyKey, {
-          paymentReceipt: paymentReceipt,
-        });
-
-      await queryRunner.manager.save(paymentReceipt);
-
-      const result: PaymentReceiptResponseSuccessDto = {
-        statusCode: HttpStatus.CREATED,
-        message: 'Successful authorization - Return payment receipt',
-        data: paymentReceipt,
-      };
+      // const result: PaymentResponseSuccessDto = {
+      //   statusCode: HttpStatus.CREATED,
+      //   message: 'Successful authorization - Return payment',
+      //   data: payment,
+      // };
 
       return result;
     } catch (error) {

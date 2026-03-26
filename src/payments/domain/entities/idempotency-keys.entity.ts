@@ -1,15 +1,15 @@
-import { Column, Entity, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Column, Entity, ManyToOne, PrimaryColumn, Unique } from 'typeorm';
 import { HttpException } from '@nestjs/common';
-import { PaymentReceiptResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
-import { PaymentReceipt } from '@domain/entities/payment.entity';
+import { PaymentResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
+import { Payment } from '@domain/entities/payment.entity';
 
 @Entity('idempotency_keys')
-export class IdempotencyKey {
-  @PrimaryColumn()
+export class IdempotencyKeyEntity {
+  @PrimaryColumn({ unique: true, type: 'uuid' })
   key: string;
 
-  @ManyToOne(() => PaymentReceipt, (paymentReceipt) => paymentReceipt.id)
-  paymentReceipt: PaymentReceipt;
+  @ManyToOne(() => Payment, (payment) => payment.id)
+  payment: Payment;
 
   @Column({ nullable: true })
   requestPath: string;
@@ -24,10 +24,13 @@ export class IdempotencyKey {
   responseStatus?: number;
 
   @Column({ type: 'simple-json', nullable: true })
-  responseBody?: PaymentReceiptResponseSuccessDto | HttpException;
+  responseBody?: PaymentResponseSuccessDto | HttpException;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  updateAt: Date;
 
   @Column({ type: 'timestamptz', nullable: true })
   expiresAt: Date;

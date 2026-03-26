@@ -1,7 +1,7 @@
 import { Request } from 'express';
 import { HttpException, HttpStatus, RawBodyRequest } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
+import { IdempotencyKey } from '@payments/domain/entities/idempotency-keys.entity';
 
 export const computeRequestFingerprint = (request: RawBodyRequest<Request>) => {
   const hash = createHash('sha256');

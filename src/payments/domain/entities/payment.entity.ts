@@ -7,7 +7,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { IdempotencyKey } from './idempotency-keys.entity';
+import { IdempotencyKeyEntity } from './idempotency-keys.entity';
 
 export enum PaymentStatus {
   PENDING = 'pending',
@@ -17,11 +17,11 @@ export enum PaymentStatus {
   REFUNDED = 'refunded',
 }
 
-@Entity('payment_receipts')
+@Entity('payments')
 @Index('idx_customer_state', ['cardNumber', 'state'])
 @Check('amount > 0')
 @Check("currency = 'USD'")
-export class PaymentReceipt {
+export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -81,11 +81,11 @@ export class PaymentReceipt {
   updatedAt: Date;
 
   @OneToMany(
-    () => IdempotencyKey,
-    (idempotencyKey) => idempotencyKey.paymentReceipt,
+    () => IdempotencyKeyEntity,
+    (idempotencyKey) => idempotencyKey.payment,
   )
   @JoinColumn({
-    name: 'payment_receipt_id',
+    name: 'payment_id',
   })
   idempotencyKeys: string[];
 }

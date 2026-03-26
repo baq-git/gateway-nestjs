@@ -24,13 +24,11 @@
     "paths": {
       "@payments/*": ["payments/*"],
       "@config/*": ["config/*"],
-      "@common/*": ["common/*"],
       "@domain/*": ["payments/domain/*"],
-
       "@infrastructure/*": ["payments/infrastructure/*"],
       "@presentation/*": ["payments/presentation/*"],
       "@application/*": ["payments/application/*"],
-      "@shared/*": ["payments/common/*"],           
+      "@common/*": ["payments/common/*"],           
       "@test/*": ["../test/*"]
     }
   }

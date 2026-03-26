@@ -1,19 +1,18 @@
 import { MockbankService } from '@infrastructure/adapters/bank/mockbank/services/mockbank.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AxiosResponse } from 'axios';
-import { PaymentReceiptService } from '../payment.service';
+import { PaymentService } from '../payment.service';
 
-describe('PaymentReceiptService', () => {
-  let service: PaymentReceiptService;
+describe('PaymentService', () => {
+  let service: PaymentService;
   let mockbankService: MockbankService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PaymentReceiptService],
+      providers: [PaymentService],
     }).compile();
 
-    service = module.get<PaymentReceiptService>(PaymentReceiptService);
-    mockbankService = module.get<MockbankService>(MockbankService);
+    service = module.get<PaymentService>(PaymentService);
   });
 
   it('should be defined', () => {

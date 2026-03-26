@@ -1,7 +1,7 @@
-import { PaymentReceipt } from '@domain/entities/payment.entity';
+import { Payment } from '@domain/entities/payment.entity';
 
-export class PaymentReceiptResponseSuccessDto {
+export class PaymentResponseSuccessDto {
   statusCode!: number;
   message!: string;
-  data!: PaymentReceipt;
+  data!: Payment;
 }

@@ -11,7 +11,7 @@ import {
 import { Request } from 'express';
 import { IsNotEmpty, IsUUID } from 'class-validator';
 import { IntersectionType } from '@nestjs/swagger';
-import { PaymentReceiptService } from '@application/services/payment.service';
+import { PaymentService } from '@application/services/payment.service';
 import { IdempotencyInterceptor } from '@infrastructure/idempotency/idempotency.interceptor';
 import { CreateAuthorizePaymentRequestDto } from '@presentation/dtos/authorize-payment.dto';
 import { HttpExceptionFilter } from '@shared/filters/http-exception.filter';
@@ -31,11 +31,11 @@ class AuthorizationInputDto extends IntersectionType(
   ClientAuthorizationInputDto,
 ) {}
 
-@Controller('payment-receipt')
+@Controller('payments')
 @UseFilters(HttpExceptionFilter)
 @UseInterceptors(IdempotencyInterceptor)
-export class PaymentReceiptController {
-  constructor(private readonly paymentService: PaymentReceiptService) {}
+export class PaymentController {
+  constructor(private readonly paymentService: PaymentService) {}
 
   @Get('/health')
   getPaymentHealth() {
@@ -43,14 +43,14 @@ export class PaymentReceiptController {
   }
 
   @Post('/authorize')
-  async authorizePaymentReceipt(
+  async authorizePayment(
     @Req() request: RawBodyRequest<Request>,
     @Body() body: AuthorizationInputDto,
     @Transaction() queryRunner: QueryRunner,
   ) {
     const idempotencyKey = request.get('Idempotency-Key') as string;
 
-    return await this.paymentService.authorizePaymentReceipt(
+    return await this.paymentService.authorizePayment(
       queryRunner,
       body,
       idempotencyKey,

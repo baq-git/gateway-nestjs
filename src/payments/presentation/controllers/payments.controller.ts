@@ -14,9 +14,9 @@ import { IntersectionType } from '@nestjs/swagger';
 import { PaymentService } from '@application/services/payment.service';
 import { IdempotencyInterceptor } from '@infrastructure/idempotency/idempotency.interceptor';
 import { CreateAuthorizePaymentRequestDto } from '@presentation/dtos/authorize-payment.dto';
-import { HttpExceptionFilter } from '@shared/filters/http-exception.filter';
-import { Transaction } from '@shared/transaction/transaction.decorator';
 import { type QueryRunner } from 'typeorm';
+import { HttpExceptionFilter } from '@common/filters/http-exception.filter';
+import { Transaction } from '@common/transaction/transaction.decorator';
 
 class ClientAuthorizationInputDto {
   @IsUUID(4, {

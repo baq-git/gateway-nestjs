@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { lastValueFrom } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
-import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
-import { Payment, PaymentStatus } from '@domain/entities/payment.entity';
+import { IdempotencyKeyEntity } from '@domain/entities/idempotency-keys.entity';
+import { PaymentEntity, PaymentStatus } from '@domain/entities/payment.entity';
 import { AuthorizeService } from '@infrastructure/adapters/bank/mockbank/services/authorize.service';
 import { CreateAuthorizePaymentRequestDto } from '@presentation/dtos/authorize-payment.dto';
 import { PaymentResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
@@ -15,8 +15,8 @@ import { QueryRunner } from 'typeorm/browser';
 @Injectable()
 export class PaymentService {
   constructor(
-    @InjectRepository(Payment)
-    private readonly paymentRepository: Repository<Payment>,
+    @InjectRepository(PaymentEntity)
+    private readonly paymentRepository: Repository<PaymentEntity>,
     @Inject(REQUEST)
     private request: Request,
 

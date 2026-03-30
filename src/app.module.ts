@@ -1,7 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { IdempotencyKey } from '@domain/entities/idempotency-keys.entity';
+import { IdempotencyKeyEntity } from '@domain/entities/idempotency-keys.entity';
 import { Payment } from '@domain/entities/payment.entity';
 import { MockbankModule } from '@infrastructure/adapters/bank/mockbank/mockbank.module';
 import { PaymentModule } from 'payments/payment.module';
@@ -15,7 +15,7 @@ import { PaymentModule } from 'payments/payment.module';
       username: 'postgres',
       password: 'postgres',
       database: 'paymentgateway',
-      entities: [Payment, IdempotencyKey],
+      entities: [Payment, IdempotencyKeyEntity],
 
       // Setting synchronize: true shouldn't be used in production
       // - otherwise you can lose production data.

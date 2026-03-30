@@ -6,6 +6,7 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
+  "setupFilesAfterEnv": ["./setup.e2e.ts"],
   "transformIgnorePatterns": [
     "/node_modules/(?!nanoid|uuid)" // Transpile nanoid and uuid, ignore everything else
   ]

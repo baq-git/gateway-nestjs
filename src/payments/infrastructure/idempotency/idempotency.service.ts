@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  type RawBodyRequest,
   Scope,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
@@ -21,7 +22,7 @@ export class IdempotencyService {
     @InjectRepository(IdempotencyKeyEntity)
     private readonly idempotencyRepository: Repository<IdempotencyKeyEntity>,
     @Inject(REQUEST)
-    private request: Request,
+    private request: RawBodyRequest<Request>,
   ) {}
 
   async getStatus(idempotencyKey: string) {
@@ -56,19 +57,19 @@ export class IdempotencyService {
   }
 
   async createOrLock(idempotencyKey: string) {
+    //NOTE: IMPORTAINT: DONT USE SAVE, USE INSERT TO THROW UNIQUE CONSTRAINTS VIOLATION
     const queryRunner: QueryRunner = this.request['queryRunner'];
     const requestHash = computeRequestFingerprint(this.request);
+    try {
+      let lockedIdempotencyEntity = await queryRunner.manager
+        .createQueryBuilder(IdempotencyKeyEntity, 'ik')
+        .setLock('pessimistic_write')
+        .where('ik.key = :key', { key: idempotencyKey })
+        .getOne();
 
-    let lockedIdempotencyEntity = await queryRunner.manager
-      .createQueryBuilder(IdempotencyKeyEntity, 'ik')
-      .setLock('pessimistic_write')
-      .where('idempotency_keys = :key', { key: idempotencyKey })
-      .getOne();
-
-    if (lockedIdempotencyEntity) {
-      const { operation } = lockedIdempotencyEntity;
-      switch (operation) {
-        case 'processing':
+      if (lockedIdempotencyEntity) {
+        const operation = lockedIdempotencyEntity.operation;
+        if (operation === 'processing') {
           throw new HttpException(
             `Conflict: Request rejected. Idempotency key ${idempotencyKey} is associated with a processing state`,
             HttpStatus.CONFLICT,
@@ -76,36 +77,72 @@ export class IdempotencyService {
               cause: `Resource lock contention: Transaction ${idempotencyKey} is currently locked by another process.`,
             },
           );
-        case 'success':
+        }
+
+        if (operation === 'success') {
           throw new ConflictException('Request already succeeded.');
-        case 'failure':
+        }
+
+        if (operation === 'failure') {
           // retry
           console.log('should retry');
 
-        default:
+          // throw new
+        }
+
+        if (!['failure', 'processing', 'success'].includes(operation)) {
           throw new HttpException(
             'Request is unknow operation',
             HttpStatus.BAD_REQUEST,
             { cause: 'Unknow operation status' },
           );
+        }
+      } else {
+        lockedIdempotencyEntity = queryRunner.manager.create(
+          IdempotencyKeyEntity,
+          {
+            key: idempotencyKey,
+            requestPath: this.request.path,
+            operation: 'processing',
+            requestHash: requestHash,
+            responseStatus: HttpStatus.CREATED,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          },
+        );
+
+        const result = await queryRunner.manager
+          .createQueryBuilder()
+          .insert()
+          .into(IdempotencyKeyEntity)
+          .values([lockedIdempotencyEntity])
+          .returning('*')
+          .execute();
+
+        return result.generatedMaps[0];
       }
-    } else {
-      lockedIdempotencyEntity = queryRunner.manager.create(
-        IdempotencyKeyEntity,
-        {
-          key: idempotencyKey,
-          requestPath: this.request.path,
-          operation: 'processing',
-          requestHash: requestHash,
-          responseStatus: HttpStatus.CREATED,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        },
-      );
+    } catch (error) {
+      if (error.code === '23505') {
+        throw new HttpException(
+          'Conflict: An active request with this idempotency key is already in progress or has been completed.',
+          HttpStatus.CONFLICT,
+          {
+            cause: error.detail,
+          },
+        );
+      }
 
-      await queryRunner.manager.save(lockedIdempotencyEntity);
+      if (error.code === '25P02') {
+        throw new HttpException(
+          'Conflict: Transaction aborted due to a previous error.',
+          HttpStatus.CONFLICT,
+          {
+            cause: error.driverError,
+          },
+        );
+      }
+
+      throw error;
     }
-
-    return lockedIdempotencyEntity;
   }
 
   async saveResponse(idempotencyKey: string, result: any) {

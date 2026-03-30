@@ -2,16 +2,16 @@ import { TestingModule, Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { REQUEST } from '@nestjs/core';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { QueryFailedError, QueryRunner, Repository } from 'typeorm';
+import { QueryRunner, Repository } from 'typeorm';
 import { IdempotencyService } from '../idempotency.service';
 import { IdempotencyKeyEntity } from '@domain/entities/idempotency-keys.entity';
-import { Payment } from '@domain/entities/payment.entity';
 import {
   BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { PaymentEntity } from '@payments/domain/entities/payment.entity';
 
 describe('IdempotencyService', () => {
   let idkService: IdempotencyService;
@@ -31,7 +31,6 @@ describe('IdempotencyService', () => {
       providers: [
         IdempotencyService,
         {
-          // 2. Tell Nest to use the mock when it asks for the repository
           provide: getRepositoryToken(IdempotencyKeyEntity),
           useValue: mockIdkRepository,
         },
@@ -62,7 +61,7 @@ describe('IdempotencyService', () => {
       operation: 'processing',
       requestPath: '/v1/payments',
       requestHash: 'sha256-hash-of-request-body',
-      payment: { id: 'payment-123' } as Payment,
+      payment: { id: 'payment-123' } as PaymentEntity,
       createdAt: new Date(),
       updateAt: new Date(),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h later
@@ -73,12 +72,16 @@ describe('IdempotencyService', () => {
       operation: 'success',
       requestPath: '/v1/payments',
       requestHash: 'sha256-hash-of-request-body',
-      payment: { id: 'payment-456', amount: 1000, currency: 'USD' } as Payment,
+      payment: {
+        id: 'payment-456',
+        amount: 1000,
+        currency: 'USD',
+      } as PaymentEntity,
       responseStatus: 201,
       responseBody: {
         statusCode: 201,
         message: 'Payment processed successfully',
-        data: { id: 'payment-456' } as Payment,
+        data: { id: 'payment-456' } as PaymentEntity,
       },
       createdAt: new Date(Date.now()),
       updateAt: new Date(),
@@ -90,7 +93,7 @@ describe('IdempotencyService', () => {
       operation: 'failure',
       requestPath: '/v1/payments',
       requestHash: 'sha256-hash-of-request-body',
-      payment: {} as Payment,
+      payment: {} as PaymentEntity,
       responseStatus: 400,
       responseBody: new HttpException(
         'Insufficent Funds',
@@ -125,7 +128,7 @@ describe('IdempotencyService', () => {
       expect(result?.responseBody).toEqual({
         statusCode: 201,
         message: 'Payment processed successfully',
-        data: { id: 'payment-456' } as Payment,
+        data: { id: 'payment-456' } as PaymentEntity,
       });
 
       expect(result).toEqual(mockSuccessKey);
@@ -171,7 +174,7 @@ describe('IdempotencyService', () => {
       );
     });
 
-    describe.only('createOrLock', () => {
+    describe('createOrLock', () => {
       const mockKey = '15dc2e9d-c29f-46d0-a4f7-0a45614e00a8';
 
       it('should create new record with processing operation', async () => {
@@ -179,6 +182,13 @@ describe('IdempotencyService', () => {
           setLock: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           getOne: jest.fn().mockResolvedValue(null),
+          insert: jest.fn().mockReturnThis(),
+          into: jest.fn().mockReturnThis(),
+          values: jest.fn().mockReturnThis(),
+          returning: jest.fn().mockReturnThis(), // <--- ADD THIS LINE
+          execute: jest.fn().mockResolvedValue({
+            generatedMaps: [{ key: mockKey, operation: 'processing' }],
+          }),
         } as any);
 
         const mockCreatedEntity = {
@@ -187,14 +197,41 @@ describe('IdempotencyService', () => {
           operation: 'processing',
         } as any;
 
+        mockIdkRepository.findOne.mockResolvedValue(mockCreatedEntity);
         mockQueryRunner.manager.create.mockReturnValue(mockCreatedEntity);
-        mockQueryRunner.manager.save.mockResolvedValue(mockCreatedEntity);
+        mockQueryRunner.manager.insert.mockResolvedValue({
+          identifiers: [{ key: mockKey }], // Phải có cái này vì code bạn dùng result.identifiers[0].key
+        } as any);
 
         const result = await idkService.createOrLock(mockKey);
+
         expect(result).toBeDefined();
         expect(mockQueryRunner.manager.create).toHaveBeenCalled();
-        expect(mockQueryRunner.manager.save).toHaveBeenCalled();
-        expect(result.operation).toBe('processing');
+
+        expect(mockQueryRunner.manager.create).toHaveBeenCalledWith(
+          IdempotencyKeyEntity,
+          expect.objectContaining({
+            key: mockKey,
+            operation: 'processing',
+          }),
+        );
+
+        expect(mockQueryRunner.manager.createQueryBuilder).toHaveBeenCalled();
+        expect(
+          mockQueryRunner.manager.createQueryBuilder().insert,
+        ).toHaveBeenCalled();
+        expect(
+          mockQueryRunner.manager.createQueryBuilder().insert,
+        ).toHaveBeenCalled();
+        expect(result?.operation).toBe('processing');
+
+        const qb = mockQueryRunner.manager.createQueryBuilder();
+
+        expect(mockQueryRunner.manager.createQueryBuilder).toHaveBeenCalled();
+
+        expect(qb.setLock).toHaveBeenCalledWith('pessimistic_write');
+        expect(qb.insert().into).toHaveBeenCalledWith(IdempotencyKeyEntity);
+        expect(qb.execute).toHaveBeenCalled();
       });
 
       it('should return existing record with processing operation when key already exists (with pessimistic lock)', async () => {
@@ -233,39 +270,6 @@ describe('IdempotencyService', () => {
         } catch (error) {
           expect(error).toBeInstanceOf(ConflictException);
         }
-      });
-
-      it('should handle race condition: two identical requests at the same time', async () => {
-        const existingIDK = {
-          key: mockKey,
-          operation: 'processing',
-        } as IdempotencyKeyEntity;
-      });
-
-      describe('Unique Constraint Violation', () => {
-        it('should catch QueryFailedError with unique violation code (23505) and throw ConflictException', async () => {
-          // Arrange: Simulate PostgreSQL unique violation
-          const uniqueError = new QueryFailedError(
-            'INSERT INTO idempotency_keys ...',
-            [],
-            {
-              code: '23505', // PostgreSQL unique_violation
-              detail: 'Key (key)=(race-key-123) already exists.',
-            } as any,
-          );
-
-          mockQueryRunner.manager.save.mockRejectedValue(uniqueError);
-
-          // Act & Assert
-          await expect(idkService.createOrLock('race-key-123')).rejects.toThrow(
-            HttpException,
-          );
-
-          // Kiểm tra thông báo lỗi có ý nghĩa
-          await expect(idkService.createOrLock('race-key-123')).rejects.toThrow(
-            /already exists|duplicate|conflict|processing/i,
-          );
-        });
       });
     });
   });

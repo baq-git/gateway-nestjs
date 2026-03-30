@@ -1,15 +1,25 @@
-import { Column, Entity, ManyToOne, PrimaryColumn, Unique } from 'typeorm';
+import {
+  Column,
+  Entity,
+  ManyToOne,
+  PrimaryColumn,
+  Unique,
+  UpdateDateColumn,
+} from 'typeorm';
 import { HttpException } from '@nestjs/common';
 import { PaymentResponseSuccessDto } from '@presentation/dtos/responses/payments.dto';
-import { Payment } from '@domain/entities/payment.entity';
+import { PaymentEntity } from '@domain/entities/payment.entity';
+
+const UNIQUE_IDEMPOTENCY_KEY_CONSTRAINT = 'unique_idempotency_key_constraint';
 
 @Entity('idempotency_keys')
+@Unique(UNIQUE_IDEMPOTENCY_KEY_CONSTRAINT, ['key'])
 export class IdempotencyKeyEntity {
-  @PrimaryColumn({ unique: true, type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', unique: true })
   key: string;
 
-  @ManyToOne(() => Payment, (payment) => payment.id)
-  payment: Payment;
+  @ManyToOne(() => PaymentEntity, (payment) => payment.id)
+  payment: PaymentEntity;
 
   @Column({ nullable: true })
   requestPath: string;
@@ -29,7 +39,7 @@ export class IdempotencyKeyEntity {
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   createdAt: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @UpdateDateColumn({ type: 'timestamptz', nullable: true })
   updateAt: Date;
 
   @Column({ type: 'timestamptz', nullable: true })

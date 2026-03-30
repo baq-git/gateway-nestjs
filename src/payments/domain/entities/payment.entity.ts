@@ -21,7 +21,7 @@ export enum PaymentStatus {
 @Index('idx_customer_state', ['cardNumber', 'state'])
 @Check('amount > 0')
 @Check("currency = 'USD'")
-export class Payment {
+export class PaymentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

@@ -273,7 +273,7 @@ describe('IdempotencyService', () => {
       });
     });
 
-    describe.only('saveResponse', () => {
+    describe('saveResponse', () => {
       const testKey = '2102544b-0c53-4350-b483-bbf1c7e030ef';
       const mockResponse = {
         paymentReference: 'pay_abc123456',
@@ -322,7 +322,7 @@ describe('IdempotencyService', () => {
         expect(mockQueryRunner.manager.save).not.toHaveBeenCalled();
       });
 
-      it.only('should update responseStatus to 200', async () => {
+      it('should update responseStatus to 200', async () => {
         const existingEntity = {
           key: testKey,
           operation: 'processing',

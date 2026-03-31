@@ -151,7 +151,7 @@ export class IdempotencyService {
     const existingIdempotencyKey = await queryRunner.manager
       .createQueryBuilder(IdempotencyKeyEntity, 'ik')
       .setLock('pessimistic_write')
-      .where('idempotency_keys = :key', { key: idempotencyKey })
+      .where('ik.key = :key', { key: idempotencyKey })
       .getOne();
 
     if (existingIdempotencyKey) {

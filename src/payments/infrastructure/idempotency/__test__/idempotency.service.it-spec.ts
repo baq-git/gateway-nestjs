@@ -10,7 +10,6 @@ import { REQUEST } from '@nestjs/core';
 import { type Request } from 'express';
 import { createMock } from '@golevelup/ts-jest';
 import { QueryRunner } from 'typeorm/browser';
-import { UUID } from 'crypto';
 
 describe('Idempotency Intergration Tests', () => {
   let idkService: IdempotencyService;

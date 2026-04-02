@@ -58,6 +58,7 @@ export class IdempotencyService {
 
   async createOrLock(idempotencyKey: string) {
     //NOTE: IMPORTAINT: DONT USE SAVE, USE INSERT TO THROW UNIQUE CONSTRAINTS VIOLATION
+    // AND SAVE METHOD COULDN'T HANDLE RACE CONDITION SO WELL
     const queryRunner: QueryRunner = this.request['queryRunner'];
     const requestHash = computeRequestFingerprint(this.request);
     try {
@@ -158,6 +159,7 @@ export class IdempotencyService {
       existingIdempotencyKey.operation = 'success';
       existingIdempotencyKey.responseBody = result;
       existingIdempotencyKey.responseStatus = 200;
+      existingIdempotencyKey.paymentId = result.paymentId;
       await queryRunner.manager.save(existingIdempotencyKey);
     }
   }

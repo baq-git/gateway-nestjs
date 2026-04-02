@@ -19,7 +19,7 @@ export class IdempotencyKeyEntity {
   key: string;
 
   @ManyToOne(() => PaymentEntity, (payment) => payment.id)
-  payment: PaymentEntity;
+  paymentId: string;
 
   @Column({ nullable: true })
   requestPath: string;

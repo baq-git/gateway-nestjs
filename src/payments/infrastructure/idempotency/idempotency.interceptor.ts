@@ -14,10 +14,12 @@ import { Request } from 'express';
 import { catchError, concatMap, finalize, Observable, of } from 'rxjs';
 import { DataSource, QueryRunner } from 'typeorm';
 import { IdempotencyService } from './idempotency.service';
-import { compareHash } from '@payments/common/utils/requestHash';
+import { compareHash } from '@common/utils/requestHash';
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(IdempotencyInterceptor.name);
+
   constructor(
     @Inject(IdempotencyService)
     private readonly idempotencyService: IdempotencyService,
@@ -29,106 +31,107 @@ export class IdempotencyInterceptor implements NestInterceptor {
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<any>> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    const request = context
+      .switchToHttp()
+      .getRequest<RawBodyRequest<Request & { queryRunner: QueryRunner }>>();
 
-    try {
-      const request = context
-        .switchToHttp()
-        .getRequest<RawBodyRequest<Request & { queryRunner: QueryRunner }>>();
-      // const response = context.switchToHttp().getResponse<Response>();
-      const idempotencyKey = request.get('Idempotency-Key') as string;
+    // const response = context.switchToHttp().getResponse<Response>();
+    const idempotencyKey = request.get('idempotency-key')?.trim();
 
-      if (!idempotencyKey) {
+    if (!idempotencyKey) {
+      throw new HttpException(
+        "Header 'idempotency-key' is required",
+        HttpStatus.BAD_REQUEST,
+        {
+          cause: 'Missing Idempotency-Key header',
+        },
+      );
+    }
+
+    if (!isUUID(idempotencyKey)) {
+      throw new HttpException(
+        "Header 'idempotency-key' is not a valid UUID",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const existingIdempotencyEntity =
+      await this.idempotencyService.findByKey(idempotencyKey);
+
+    if (existingIdempotencyEntity) {
+      if (existingIdempotencyEntity.operation === 'success') {
+        compareHash(request, existingIdempotencyEntity);
+        return of(existingIdempotencyEntity.responseBody);
+      }
+
+      if (existingIdempotencyEntity.operation === 'processing')
         throw new HttpException(
-          "Header 'idempotency-key' is required",
-          HttpStatus.BAD_REQUEST,
+          `Conflict: Request rejected. Idempotency key ${idempotencyKey} is still processing`,
+          HttpStatus.CONFLICT,
           {
-            cause: 'Missing Idempotency-Key header',
+            cause: `Resource lock contention: Transaction in ${idempotencyKey} key is currently locked by another process.`,
           },
         );
-      }
 
-      if (!isUUID(idempotencyKey)) {
-        throw new HttpException(
-          "Header 'idempotency-key' is not a valid UUID",
-          HttpStatus.BAD_REQUEST,
-        );
+      if (existingIdempotencyEntity.operation === 'failure') {
+        this.logger.warn(`Retrying failed idempotency key: ${idempotencyKey}`);
+        return of('retry');
+        // Tiếp tục xử lý như request mới (không replay error)
       }
+    }
 
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.startTransaction();
       request['queryRunner'] = queryRunner;
 
-      const existingIdempotencyEntity =
-        await this.idempotencyService.findByKey(idempotencyKey);
+      await this.idempotencyService.createOrLock(idempotencyKey);
 
-      if (existingIdempotencyEntity) {
-        if (existingIdempotencyEntity.operation === 'success') {
-          compareHash(request, existingIdempotencyEntity);
-          return of(existingIdempotencyEntity.responseBody);
-        }
+      return next.handle().pipe(
+        concatMap(async (result) => {
+          try {
+            await this.idempotencyService.saveResponse(idempotencyKey, result);
+            await queryRunner.commitTransaction();
+            return result;
+          } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+          }
+        }),
 
-        if (existingIdempotencyEntity.operation === 'failure') {
-          compareHash(request, existingIdempotencyEntity);
-          return of(existingIdempotencyEntity.responseBody);
-        }
+        catchError(async (error: any) => {
+          if (queryRunner.isTransactionActive) {
+            await queryRunner.rollbackTransaction();
+          }
 
-        if (existingIdempotencyEntity.operation === 'processing')
-          throw new HttpException(
-            `Conflict: Request rejected. Idempotency key ${idempotencyKey} is associated with a processing state`,
-            HttpStatus.CONFLICT,
-            {
-              cause: `Resource lock contention: Transaction ${idempotencyKey} is currently locked by another process.`,
-            },
-          );
-      }
+          try {
+            await this.idempotencyService.saveError(idempotencyKey, error);
+          } catch (saveErr) {
+            // this.logger.error(
+            //   `Failed to save error state for idempotency key ${idempotencyKey}`,
+            //   saveErr,
+            // );
+          }
 
-      if (!existingIdempotencyEntity) {
-        await this.idempotencyService.createOrLock(idempotencyKey);
+          throw error;
+        }),
 
-        return next.handle().pipe(
-          concatMap(async (result) => {
-            try {
-              await this.idempotencyService.saveResponse(
-                idempotencyKey,
-                result,
-              );
-
-              await queryRunner.commitTransaction();
-
-              return result;
-            } catch (err) {
-              await queryRunner.rollbackTransaction();
-              throw err;
-            }
-          }),
-          catchError(async (error: HttpException) => {
-            if (queryRunner.isTransactionActive) {
-              await queryRunner.rollbackTransaction();
-            }
-
-            try {
-              await this.idempotencyService.saveError(idempotencyKey, error);
-            } catch (saveError) {
-              Logger.error('Failed to save idempotency error state', saveError);
-            }
-
-            return of(error);
-          }),
-          finalize(async () => {
-            if (!queryRunner.isReleased) {
-              await queryRunner.release();
-            }
-          }),
-        );
-      }
-
-      return next.handle();
+        finalize(async () => {
+          if (!queryRunner.isReleased) {
+            await queryRunner.release();
+          }
+        }),
+      );
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
-      await queryRunner.release();
+      if (!queryRunner.isReleased) {
+        await queryRunner.release();
+      }
     }
   }
 }

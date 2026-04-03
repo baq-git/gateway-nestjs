@@ -11,7 +11,6 @@ import { IdempotencyInterceptor } from '../idempotency.interceptor';
 import { DataSource, QueryRunner } from 'typeorm';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { PaymentStatus } from '@domain/constants';
-import { interceptors } from 'axios';
 
 describe('IdempotencyInterceptor', () => {
   let interceptor: IdempotencyInterceptor;
@@ -439,6 +438,52 @@ describe('IdempotencyInterceptor', () => {
       ).rejects.toThrow(mockError);
 
       expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('CONCURRENT SIMULATION', () => {
+    it('should handle basic concurrent request simulation', async () => {
+      const mockSuccessResponse = {
+        paymentReference: 'pay_12345',
+        status: 'AUTHORIZED',
+      };
+
+      mockExecutionContext = createMock<ExecutionContext>({
+        switchToHttp: () => ({
+          getRequest: () => createRequestMock(validIdempotencyKey),
+        }),
+      });
+
+      idempotencyService.findByKey.mockResolvedValue(null);
+      mockCallHandler.handle.mockReturnValue(of(mockSuccessResponse));
+
+      const promise1 = interceptor.intercept(
+        mockExecutionContext,
+        mockCallHandler,
+      );
+      const promise2 = interceptor.intercept(
+        mockExecutionContext,
+        mockCallHandler,
+      );
+
+      const results = await Promise.allSettled([
+        lastValueFrom(await promise1),
+        lastValueFrom(await promise2),
+      ]);
+
+      const successOrConflict = results.some((r) => {
+        if (r.status === 'rejected') return false;
+        const value = r.value;
+        return (
+          !(value instanceof HttpException) ||
+          value.getStatus() === HttpStatus.CONFLICT
+        );
+      });
+
+      expect(successOrConflict).toBe(true);
+
+      // Ít nhất 1 lần createOrLock phải được gọi
+      expect(idempotencyService.createOrLock).toHaveBeenCalled();
     });
   });
 });

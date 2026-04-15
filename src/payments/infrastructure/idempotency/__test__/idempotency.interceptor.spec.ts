@@ -216,7 +216,7 @@ describe('IdempotencyInterceptor', () => {
 
       const mockSuccessResponse = {
         paymentId: 'pay_123456',
-        status: PaymentStatus.Pending,
+        status: PaymentStatus.PENDING,
       };
 
       const existing = {

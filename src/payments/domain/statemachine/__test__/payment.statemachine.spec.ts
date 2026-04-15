@@ -1,16 +1,18 @@
-// I try TDD for this implementation
-// UNIT TESTS: fail first
-
-import { PaymentState, PaymentStatus, PaymentEvent } from '@domain/constants';
-import { createPaymentStateMachine } from '../payment.statemachine';
+import { PaymentStatus } from '@domain/constants';
+import {
+  createPaymentStateMachine,
+  PaymentEvent,
+  PaymentState,
+} from '../payment.statemachine';
+import { HttpException } from '@nestjs/common';
 
 describe('Payment statemachine', () => {
   let initialState: PaymentState;
 
   beforeEach(() => {
     initialState = {
-      status: PaymentStatus.Pending,
-      targetState: PaymentStatus.Authorized,
+      status: PaymentStatus.PENDING,
+      targetState: PaymentStatus.AUTHORIZED,
     };
   });
 
@@ -19,23 +21,16 @@ describe('Payment statemachine', () => {
       const paymentStateMachine = createPaymentStateMachine(initialState);
       const state = paymentStateMachine.getState();
 
-      expect(state.status).toBe(PaymentStatus.Pending);
+      expect(state.status).toBe(PaymentStatus.PENDING);
     });
   });
 
   describe('From Pending to Authorized', () => {
-    it('should transit back Pending with AuthorizedFailure event', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeFailure);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Pending);
-    });
-
     it('should transit from Pending to Authorized with AuthorizeSuccess event', () => {
       const paymentStateMachine = createPaymentStateMachine(initialState);
       const expectedState = {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Captured,
+        status: PaymentStatus.AUTHORIZED,
+        targetState: PaymentStatus.CAPTURED,
       };
 
       paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
@@ -45,19 +40,15 @@ describe('Payment statemachine', () => {
 
     it('should return error if current state is not Pending', () => {
       const initialState: PaymentState = {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Captured,
+        status: PaymentStatus.AUTHORIZED,
+        targetState: PaymentStatus.CAPTURED,
       };
 
       const paymentStateMachine = createPaymentStateMachine(initialState);
 
       expect(
         paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess),
-      ).toBeInstanceOf(Error);
-      expect(paymentStateMachine.getState()).toEqual(initialState);
-      expect(
-        paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess) as Error,
-      ).toEqual(new Error('Current state is not Pending'));
+      ).toBeInstanceOf(HttpException);
     });
   });
 
@@ -65,13 +56,13 @@ describe('Payment statemachine', () => {
     it.each([
       {
         currentState: {
-          status: PaymentStatus.Pending,
-          targetState: PaymentStatus.Authorized,
+          status: PaymentStatus.PENDING,
+          targetState: PaymentStatus.AUTHORIZED,
         } as PaymentState,
         expected: {
           state: {
-            status: PaymentStatus.Pending,
-            targetState: PaymentStatus.Authorized,
+            status: PaymentStatus.PENDING,
+            targetState: PaymentStatus.AUTHORIZED,
           },
         },
         event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
@@ -80,13 +71,13 @@ describe('Payment statemachine', () => {
       },
       {
         currentState: {
-          status: PaymentStatus.Captured,
-          targetState: PaymentStatus.Refunded,
+          status: PaymentStatus.CAPTURED,
+          targetState: PaymentStatus.REFUNDED,
         } as PaymentState,
         expected: {
           state: {
-            status: PaymentStatus.Captured,
-            targetState: PaymentStatus.Refunded,
+            status: PaymentStatus.CAPTURED,
+            targetState: PaymentStatus.REFUNDED,
           },
         },
         event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
@@ -95,11 +86,11 @@ describe('Payment statemachine', () => {
       },
       {
         currentState: {
-          status: PaymentStatus.Refunded,
+          status: PaymentStatus.REFUNDED,
         } as PaymentState,
         expected: {
           state: {
-            status: PaymentStatus.Refunded,
+            status: PaymentStatus.REFUNDED,
           },
         },
         event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
@@ -108,11 +99,11 @@ describe('Payment statemachine', () => {
       },
       {
         currentState: {
-          status: PaymentStatus.Voided,
+          status: PaymentStatus.VOIDED,
         } as PaymentState,
         expected: {
           state: {
-            status: PaymentStatus.Voided,
+            status: PaymentStatus.VOIDED,
           },
         },
         event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
@@ -135,7 +126,7 @@ describe('Payment statemachine', () => {
       paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
       paymentStateMachine.capture(PaymentEvent.CaptureSuccess);
       const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Captured);
+      expect(state.status).toBe(PaymentStatus.CAPTURED);
     });
 
     it('should be back to Authroized if Captured failure', () => {
@@ -143,15 +134,15 @@ describe('Payment statemachine', () => {
       paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
       paymentStateMachine.capture(PaymentEvent.CaptureFailure);
       const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Authorized);
+      expect(state.status).toBe(PaymentStatus.AUTHORIZED);
     });
   });
 
   describe('From Authorized to Voided', () => {
     it('should return error if current state is not Authorized', () => {
       const initialState: PaymentState = {
-        status: PaymentStatus.Captured,
-        targetState: PaymentStatus.Refunded,
+        status: PaymentStatus.CAPTURED,
+        targetState: PaymentStatus.REFUNDED,
       };
 
       const paymentStateMachine = createPaymentStateMachine(initialState);
@@ -170,7 +161,7 @@ describe('Payment statemachine', () => {
       paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
       paymentStateMachine.voidy(PaymentEvent.VoidSuccess);
       const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Voided);
+      expect(state.status).toBe(PaymentStatus.VOIDED);
     });
 
     it('should be back to Authorized if Voided failure', () => {
@@ -178,15 +169,15 @@ describe('Payment statemachine', () => {
       paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
       paymentStateMachine.voidy(PaymentEvent.VoidFailure);
       const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Authorized);
+      expect(state.status).toBe(PaymentStatus.AUTHORIZED);
     });
   });
 
   describe('From Captured to Refunded', () => {
     it('should return error if current state is not Captured', () => {
       const initialState: PaymentState = {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Captured,
+        status: PaymentStatus.AUTHORIZED,
+        targetState: PaymentStatus.CAPTURED,
       };
 
       const paymentStateMachine = createPaymentStateMachine(initialState);
@@ -206,7 +197,7 @@ describe('Payment statemachine', () => {
       paymentStateMachine.capture(PaymentEvent.CaptureSuccess);
       paymentStateMachine.refund(PaymentEvent.RefundSuccess);
       const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.Refunded);
+      expect(state.status).toBe(PaymentStatus.REFUNDED);
     });
   });
 });

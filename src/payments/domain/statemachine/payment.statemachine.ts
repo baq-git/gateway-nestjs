@@ -1,133 +1,168 @@
-// PHILOSOPHY FOLLOW github.statechart
-// "AN ABSTRACT STATE MACHINE IS A SOFTWARE COMPONENT THAT DEFINES A FINITE SET OF STATES":
-// One state is defined as the initial state. When a machine starts to execute, it automatically enters this state. [checked]
-// Each state can define actions that occur when a machine enters or exits that state.
-// Actions will typically have side effects.
-// Each state can define events that trigger a transition.
-// A transition defines how a machine would react to the event, by exiting one state and entering another state.
-// A transition can define actions that occur when the transition happens. Actions will typically have side effects.
-// -----------------------------------------------------------------------------
-// The event is checked against the current state's transitions.
-// If a transition matches the event, that transition “happens”.
-// By virtue of a transition “happening”, states are exited, and entered and the relevant actions are performed
-// The machine immediately is in the new state, ready to process the next event. [checked]
-// -----------------------------------------------------------------------------
-// Follow the books: Domain Modeling Made Functional
-// A much better approach is to make each state have its own type, which stores
-// the data that is relevant to that state (if any). The entire set of states can then
-// be represented by a choice type with a case for each state. [checked]
+import { HttpException } from '@nestjs/common';
+import { PaymentStatus } from '../constants';
 
-import {
-  PaymentState,
-  PaymentTransitions,
-  PaymentStatus,
-  PaymentEvent,
-} from '../constants';
+export enum PaymentEvent {
+  AuthorizeSuccess = 'AUTHORIZESUCCESS',
+  AuthorizeFailure = 'AUTHORIZEFAILURE',
+  CaptureSuccess = 'CAPTURESUCCESS',
+  CaptureFailure = 'CAPTUREFAILURE',
+  RefundSuccess = 'REFUNDSUCCESS',
+  RefundFailure = 'REFUNDFAILURE',
+  VoidSuccess = 'VOIDSUCCESS',
+  VoidFailure = 'VOIDFAILURE',
+}
+
+// discriminated union
+export type PaymentState =
+  | {
+      status: PaymentStatus.PENDING;
+      targetState: PaymentStatus.AUTHORIZED;
+    }
+  | {
+      status: PaymentStatus.AUTHORIZED;
+      targetState: PaymentStatus.CAPTURED | PaymentStatus.VOIDED;
+    }
+  | {
+      status: PaymentStatus.CAPTURED;
+      targetState: PaymentStatus.REFUNDED;
+    }
+  | { status: PaymentStatus.VOIDED }
+  | {
+      status: PaymentStatus.REFUNDED;
+    };
+
+export type PaymentTransitions = {
+  [PaymentStatus.PENDING]:
+    | PaymentEvent.AuthorizeSuccess
+    | PaymentEvent.AuthorizeFailure;
+  [PaymentStatus.AUTHORIZED]:
+    | PaymentEvent.CaptureSuccess
+    | PaymentEvent.CaptureFailure
+    | PaymentEvent.VoidSuccess
+    | PaymentEvent.VoidFailure;
+  [PaymentStatus.CAPTURED]:
+    | PaymentEvent.RefundSuccess
+    | PaymentEvent.RefundFailure;
+  [PaymentStatus.REFUNDED]: never;
+  [PaymentStatus.VOIDED]: never;
+};
 
 export interface StateMachine {
   getState: () => PaymentState;
   authorize: (
-    event: PaymentTransitions[PaymentStatus.Pending],
-  ) => PaymentState | Error;
+    event: PaymentTransitions[PaymentStatus.PENDING],
+  ) => PaymentState | HttpException | Error;
   capture: (
-    event: PaymentTransitions[PaymentStatus.Authorized],
+    event: PaymentTransitions[PaymentStatus.AUTHORIZED],
   ) => PaymentState | Error;
   voidy: (
-    event: PaymentTransitions[PaymentStatus.Authorized],
+    event: PaymentTransitions[PaymentStatus.AUTHORIZED],
   ) => PaymentState | Error;
   refund: (
-    event: PaymentTransitions[PaymentStatus.Captured],
+    event: PaymentTransitions[PaymentStatus.CAPTURED],
   ) => PaymentState | Error;
 }
 
 const authorizeTransit = (
   currentState: PaymentState,
-  event: PaymentTransitions[PaymentStatus.Pending],
-): PaymentState | Error => {
-  if (currentState.status !== PaymentStatus.Pending) {
-    return new Error('Current state is not Pending');
+  event: PaymentTransitions[PaymentStatus.PENDING],
+): PaymentState | HttpException => {
+  if (currentState.status !== PaymentStatus.PENDING) {
+    return new HttpException('Current state is not Pending', 402);
   }
 
-  switch (event) {
-    case PaymentEvent.AuthorizeSuccess:
-      return {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Captured,
-      };
-    case PaymentEvent.AuthorizeFailure:
-      return {
-        status: PaymentStatus.Pending,
-        targetState: PaymentStatus.Authorized,
-      };
-    default:
-      return new Error('Invalid event');
+  if (event === PaymentEvent.AuthorizeSuccess) {
+    return {
+      status: PaymentStatus.AUTHORIZED,
+      targetState: PaymentStatus.CAPTURED,
+    };
   }
+
+  return new HttpException(
+    `Invalid state transition: ${PaymentStatus.PENDING} → ${PaymentStatus.AUTHORIZED}`,
+    402,
+    {
+      cause: `Payment Authorize Event is not Success`,
+    },
+  );
 };
 
 const captureTransit = (
   currentState: PaymentState,
-  event: PaymentTransitions[PaymentStatus.Authorized],
-): PaymentState | Error => {
-  if (currentState.status !== PaymentStatus.Authorized) {
-    return new Error('Current state is not Authorized');
+  event: PaymentTransitions[PaymentStatus.AUTHORIZED],
+): PaymentState | HttpException => {
+  if (currentState.status !== PaymentStatus.AUTHORIZED) {
+    return new HttpException('Current state is not AUTHORIZED', 402);
   }
 
   switch (event) {
     case PaymentEvent.CaptureSuccess:
       return {
-        status: PaymentStatus.Captured,
-        targetState: PaymentStatus.Refunded,
+        status: PaymentStatus.CAPTURED,
+        targetState: PaymentStatus.REFUNDED,
       };
     case PaymentEvent.CaptureFailure:
       return {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Captured,
+        status: PaymentStatus.AUTHORIZED,
+        targetState: PaymentStatus.CAPTURED,
       };
     default:
-      return new Error('Invalid event');
+      return new HttpException(
+        `Invalid state transition: ${PaymentStatus.AUTHORIZED} → ${PaymentStatus.PENDING}`,
+        402,
+        {
+          cause: `Payment Captured Event is not Success or Failure`,
+        },
+      );
   }
 };
 
 const voidTransit = (
   currentState: PaymentState,
-  event: PaymentTransitions[PaymentStatus.Authorized],
+  event: PaymentTransitions[PaymentStatus.AUTHORIZED],
 ): PaymentState | Error => {
-  if (currentState.status !== PaymentStatus.Authorized) {
+  if (currentState.status !== PaymentStatus.AUTHORIZED) {
     return new Error('Current state is not Authorized');
   }
 
   switch (event) {
     case PaymentEvent.VoidSuccess:
       return {
-        status: PaymentStatus.Voided,
+        status: PaymentStatus.VOIDED,
       };
     case PaymentEvent.VoidFailure:
       return {
-        status: PaymentStatus.Authorized,
-        targetState: PaymentStatus.Voided,
+        status: PaymentStatus.AUTHORIZED,
+        targetState: PaymentStatus.VOIDED,
       };
     default:
-      return new Error('Invalid event');
+      return new HttpException(
+        `Invalid state transition: ${PaymentStatus.AUTHORIZED} → ${PaymentStatus.VOIDED}`,
+        402,
+        {
+          cause: `Payment Voided Event is not Success or Failure`,
+        },
+      );
   }
 };
 
 const refundTransit = (
   currentState: PaymentState,
-  event: PaymentTransitions[PaymentStatus.Captured],
+  event: PaymentTransitions[PaymentStatus.CAPTURED],
 ): PaymentState | Error => {
-  if (currentState.status !== PaymentStatus.Captured) {
+  if (currentState.status !== PaymentStatus.CAPTURED) {
     return new Error('Current state is not Captured');
   }
 
   switch (event) {
     case PaymentEvent.RefundSuccess:
       return {
-        status: PaymentStatus.Refunded,
+        status: PaymentStatus.REFUNDED,
       };
     case PaymentEvent.RefundFailure:
       return {
-        status: PaymentStatus.Captured,
-        targetState: PaymentStatus.Refunded,
+        status: PaymentStatus.CAPTURED,
+        targetState: PaymentStatus.REFUNDED,
       };
     default:
       return new Error('Invalid event');
@@ -140,7 +175,10 @@ export const createPaymentStateMachine = (
   let state: PaymentState = initialState;
 
   const transition = <T extends PaymentEvent>(
-    transitonFn: (currentState: PaymentState, event: T) => PaymentState | Error,
+    transitonFn: (
+      currentState: PaymentState,
+      event: T,
+    ) => PaymentState | Error | HttpException,
     event: T,
   ) => {
     const currentState = state;

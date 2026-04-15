@@ -8,14 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { IdempotencyKeyEntity } from './idempotency-keys.entity';
-
-export enum PaymentStatus {
-  PENDING = 'pending',
-  AUTHORIZED = 'authorized',
-  CAPTURED = 'captured',
-  VOIDED = 'voided',
-  REFUNDED = 'refunded',
-}
+import { PaymentStatus } from '../constants';
 
 @Entity('payments')
 @Index('idx_customer_state', ['cardNumber', 'state'])
@@ -25,8 +18,11 @@ export class PaymentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   orderId: string;
+
+  @Column({ type: 'uuid' })
+  customerId: string;
 
   @Column()
   cardNumber: string;
@@ -82,7 +78,7 @@ export class PaymentEntity {
 
   @OneToMany(
     () => IdempotencyKeyEntity,
-    (idempotencyKey) => idempotencyKey.payment,
+    (idempotencyKey) => idempotencyKey.paymentId,
   )
   @JoinColumn({
     name: 'payment_id',

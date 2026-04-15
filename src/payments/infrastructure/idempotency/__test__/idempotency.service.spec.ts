@@ -185,7 +185,7 @@ describe('IdempotencyService', () => {
           insert: jest.fn().mockReturnThis(),
           into: jest.fn().mockReturnThis(),
           values: jest.fn().mockReturnThis(),
-          returning: jest.fn().mockReturnThis(), // <--- ADD THIS LINE
+          returning: jest.fn().mockReturnThis(),
           execute: jest.fn().mockResolvedValue({
             generatedMaps: [{ key: mockKey, operation: 'processing' }],
           }),
@@ -200,7 +200,7 @@ describe('IdempotencyService', () => {
         mockIdkRepository.findOne.mockResolvedValue(mockCreatedEntity);
         mockQueryRunner.manager.create.mockReturnValue(mockCreatedEntity);
         mockQueryRunner.manager.insert.mockResolvedValue({
-          identifiers: [{ key: mockKey }], // Phải có cái này vì code bạn dùng result.identifiers[0].key
+          identifiers: [{ key: mockKey }],
         } as any);
 
         const result = await idkService.createOrLock(mockKey);

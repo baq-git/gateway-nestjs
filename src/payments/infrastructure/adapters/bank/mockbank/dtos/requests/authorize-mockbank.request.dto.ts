@@ -1,12 +1,11 @@
 import {
   IsInt,
-  IsNotEmpty,
-  IsNumber,
-  IsNumberString,
   IsString,
-  Length,
-  Max,
+  IsNotEmpty,
   Min,
+  Max,
+  Length,
+  Matches,
   ValidationOptions,
   registerDecorator,
 } from 'class-validator';
@@ -53,51 +52,32 @@ export function IsLuhhValidated(
   };
 }
 
-export class CreateAuthorizePaymentRequestDto {
-  @IsNotEmpty({ message: 'Amount is required' })
-  @IsNumber()
-  @Min(1, { message: 'Amount must be greater than 0' })
-  @Max(9999, { message: 'Amount must be less than 9999' })
+export class CreateAuthorizationMockBankRequestDto {
+  @IsInt()
+  @Min(1)
   amount!: number;
 
-  @IsNotEmpty({ message: 'Card Number is required' })
-  @Length(13, 19, { message: 'Card Number must be between 13 and 19 digits' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(13, 19)
+  @Matches(/^\d{13,19}$/)
   @IsLuhhValidated('cardNumber', { message: 'Card Number is invalid' })
-  @IsString({ message: 'Card Number must be a string' })
   cardNumber!: string;
 
+  @IsString()
+  @IsNotEmpty()
+  @Length(3, 4)
   @IsNotEmpty({ message: 'CVV is required' })
   @Length(3, 4, { message: 'CVV must be between 3 and 4 digits' })
-  @IsNumberString()
   cvv!: string;
 
-  @IsNotEmpty({ message: 'Expiry Month is required' })
-  @IsInt({ message: 'Expiry Month must be an integer' })
-  @Min(1, { message: 'Expiry Month must be greater than 0' })
-  @Max(12, { message: 'Expiry Month must be less than 12' })
+  @IsInt()
+  @Min(1)
+  @Max(12)
   expiryMonth!: number;
 
-  @IsNotEmpty({ message: 'Expiry Year is required' })
-  @IsInt({ message: 'Expiry Year must be an integer' })
-  @Min(2024, { message: 'Expiry Year must be greater than 2024' })
-  @Max(2099, { message: 'Expiry Year must be less than 2099' })
+  @IsInt()
+  @Min(2024)
+  @Max(2099)
   expiryYear!: number;
-}
-
-export class CreateAuthorizePaymentResponseDto {
-  amount!: number;
-  authorizationId!: string;
-  createdAt!: Date;
-  currency!: string;
-  expiresAt!: Date;
-  status!: string;
-}
-
-export class GetAuthorizePaymentResponseDto {
-  amount!: number;
-  authorization_id!: string;
-  createdAt!: Date;
-  currency!: string;
-  expiresAt!: Date;
-  status: 'approved';
 }

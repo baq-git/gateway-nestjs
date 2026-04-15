@@ -6,7 +6,7 @@ import {
 import { Request } from 'express';
 import { QueryRunner } from 'typeorm';
 
-export const Transaction = createParamDecorator(
+export const Transactional = createParamDecorator(
   (data: unknown, context: ExecutionContext) => {
     const request = context
       .switchToHttp()

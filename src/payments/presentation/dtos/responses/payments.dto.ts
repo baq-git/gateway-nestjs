@@ -1,7 +1,7 @@
-import { Payment } from '@domain/entities/payment.entity';
+import { PaymentEntity } from '@domain/entities/payment.entity';
 
 export class PaymentResponseSuccessDto {
   statusCode!: number;
   message!: string;
-  data!: Payment;
+  data!: PaymentEntity;
 }

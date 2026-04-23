@@ -1,5 +1,5 @@
 import { CreateAuthorizationMockBankRequestDto } from './mockbank/dtos/requests/authorize-mockbank.request.dto';
-import { CreateCaptureRequestDto } from './mockbank/dtos/requests/capture-mockbank.request.dto';
+import { CreateCaptureMockBankRequestDto } from './mockbank/dtos/requests/capture-mockbank.request.dto';
 import { CreateRefundRequestDto } from './mockbank/dtos/requests/refund-mockbank.request.dto';
 import { CreateVoidRequestDto } from './mockbank/dtos/requests/void-mockbank.request.dto';
 import { AuthorizationResponseDto } from './mockbank/dtos/responses/authorize-mockbank.response.dto';
@@ -14,7 +14,7 @@ export interface BankPort {
     idempotencyKey: string,
   ): Promise<AuthorizationResponseDto>;
   capture(
-    data: CreateCaptureRequestDto,
+    data: CreateCaptureMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<CaptureResponseDto>;
   void(

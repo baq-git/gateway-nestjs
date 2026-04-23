@@ -1,203 +1,123 @@
-import { PaymentStatus } from '@domain/constants';
 import {
   createPaymentStateMachine,
   PaymentEvent,
-  PaymentState,
 } from '../payment.statemachine';
+import { PaymentStatus } from '../../constants';
 import { HttpException } from '@nestjs/common';
 
-describe('Payment statemachine', () => {
-  let initialState: PaymentState;
+describe('Payment State Machine', () => {
+  describe('From PENDING', () => {
+    it('should transition to AUTHORIZED on AUTHORIZE_SUCCESS', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.PENDING);
 
-  beforeEach(() => {
-    initialState = {
-      status: PaymentStatus.PENDING,
-      targetState: PaymentStatus.AUTHORIZED,
-    };
-  });
+      sm.authorize(PaymentEvent.AUTHORIZE_SUCCESS);
 
-  describe('Init stage', () => {
-    it('initstate should be Pending', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      const state = paymentStateMachine.getState();
+      expect(sm.getState()).toBe(PaymentStatus.AUTHORIZED);
+    });
 
-      expect(state.status).toBe(PaymentStatus.PENDING);
+    it('should stay in PENDING on AUTHORIZE_FAILURE', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.PENDING);
+
+      sm.authorize(PaymentEvent.AUTHORIZE_FAILURE);
+
+      expect(sm.getState()).toBe(PaymentStatus.PENDING);
+    });
+
+    it('should throw error on invalid transition (e.g. CAPTURE_SUCCESS)', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.PENDING);
+
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow(
+        'Invalid transition',
+      );
     });
   });
 
-  describe('From Pending to Authorized', () => {
-    it('should transit from Pending to Authorized with AuthorizeSuccess event', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      const expectedState = {
-        status: PaymentStatus.AUTHORIZED,
-        targetState: PaymentStatus.CAPTURED,
-      };
+  describe('From AUTHORIZED', () => {
+    let sm: ReturnType<typeof createPaymentStateMachine>;
 
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      const state = paymentStateMachine.getState();
-      expect(state).toEqual(expectedState);
+    beforeEach(() => {
+      sm = createPaymentStateMachine(PaymentStatus.AUTHORIZED);
     });
 
-    it('should return error if current state is not Pending', () => {
-      const initialState: PaymentState = {
-        status: PaymentStatus.AUTHORIZED,
-        targetState: PaymentStatus.CAPTURED,
-      };
-
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-
-      expect(
-        paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess),
-      ).toBeInstanceOf(HttpException);
-    });
-  });
-
-  describe('From Authorized to Captured', () => {
-    it.each([
-      {
-        currentState: {
-          status: PaymentStatus.PENDING,
-          targetState: PaymentStatus.AUTHORIZED,
-        } as PaymentState,
-        expected: {
-          state: {
-            status: PaymentStatus.PENDING,
-            targetState: PaymentStatus.AUTHORIZED,
-          },
-        },
-        event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
-        message: 'Current state is not Authorized',
-        metadata: 'Captured could not capture twice',
-      },
-      {
-        currentState: {
-          status: PaymentStatus.CAPTURED,
-          targetState: PaymentStatus.REFUNDED,
-        } as PaymentState,
-        expected: {
-          state: {
-            status: PaymentStatus.CAPTURED,
-            targetState: PaymentStatus.REFUNDED,
-          },
-        },
-        event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
-        message: 'Current state is not Authorized',
-        metadata: 'Captured could not capture twice',
-      },
-      {
-        currentState: {
-          status: PaymentStatus.REFUNDED,
-        } as PaymentState,
-        expected: {
-          state: {
-            status: PaymentStatus.REFUNDED,
-          },
-        },
-        event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
-        message: 'Current state is not Authorized',
-        metadata: 'Refunded could not capture back',
-      },
-      {
-        currentState: {
-          status: PaymentStatus.VOIDED,
-        } as PaymentState,
-        expected: {
-          state: {
-            status: PaymentStatus.VOIDED,
-          },
-        },
-        event: PaymentEvent.CaptureSuccess as PaymentEvent.CaptureSuccess,
-        message: 'Current state is not Authorized',
-        metadata: 'Voided could not capture back',
-      },
-    ])(
-      'should return error if current state is not Authorized: $metadata',
-      ({ currentState: testState, expected, event, message }) => {
-        const paymentStateMachine = createPaymentStateMachine(testState);
-        const result = paymentStateMachine.capture(event);
-        expect(result).toBeInstanceOf(Error);
-        expect(result).toEqual(new Error(message));
-        expect(paymentStateMachine.getState()).toEqual(expected.state);
-      },
-    );
-
-    it('should be Captured if Authorized and Captured success', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      paymentStateMachine.capture(PaymentEvent.CaptureSuccess);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.CAPTURED);
+    it('should transition to CAPTURED on CAPTURE_SUCCESS', () => {
+      sm.capture(PaymentEvent.CAPTURE_SUCCESS);
+      expect(sm.getState()).toBe(PaymentStatus.CAPTURED);
     });
 
-    it('should be back to Authroized if Captured failure', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      paymentStateMachine.capture(PaymentEvent.CaptureFailure);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.AUTHORIZED);
+    it('should stay in AUTHORIZED on CAPTURE_FAILURE', () => {
+      sm.capture(PaymentEvent.CAPTURE_FAILURE);
+      expect(sm.getState()).toBe(PaymentStatus.AUTHORIZED);
+    });
+
+    it('should transition to VOIDED on VOID_SUCCESS', () => {
+      sm.void(PaymentEvent.VOID_SUCCESS);
+      expect(sm.getState()).toBe(PaymentStatus.VOIDED);
+    });
+
+    it('should throw error when trying to refund from AUTHORIZED', () => {
+      expect(() => sm.refund(PaymentEvent.REFUND_SUCCESS)).toThrow(
+        'Invalid transition',
+      );
     });
   });
 
-  describe('From Authorized to Voided', () => {
-    it('should return error if current state is not Authorized', () => {
-      const initialState: PaymentState = {
-        status: PaymentStatus.CAPTURED,
-        targetState: PaymentStatus.REFUNDED,
-      };
+  describe('From CAPTURED', () => {
+    let sm: ReturnType<typeof createPaymentStateMachine>;
 
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-
-      expect(
-        paymentStateMachine.voidy(PaymentEvent.VoidSuccess),
-      ).toBeInstanceOf(Error);
-      expect(paymentStateMachine.getState()).toEqual(initialState);
-      expect(
-        paymentStateMachine.voidy(PaymentEvent.VoidSuccess) as Error,
-      ).toEqual(new Error('Current state is not Authorized'));
+    beforeEach(() => {
+      sm = createPaymentStateMachine(PaymentStatus.CAPTURED);
     });
 
-    it('should be Voided if Authorized and Voided success', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      paymentStateMachine.voidy(PaymentEvent.VoidSuccess);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.VOIDED);
+    it('should transition to REFUNDED on REFUND_SUCCESS', () => {
+      sm.refund(PaymentEvent.REFUND_SUCCESS);
+      expect(sm.getState()).toBe(PaymentStatus.REFUNDED);
     });
 
-    it('should be back to Authorized if Voided failure', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      paymentStateMachine.voidy(PaymentEvent.VoidFailure);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.AUTHORIZED);
+    it('should stay in CAPTURED on REFUND_FAILURE', () => {
+      sm.refund(PaymentEvent.REFUND_FAILURE);
+      expect(sm.getState()).toBe(PaymentStatus.CAPTURED);
+    });
+
+    it('should throw error when trying to capture again', () => {
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow(
+        'Invalid transition',
+      );
     });
   });
 
-  describe('From Captured to Refunded', () => {
-    it('should return error if current state is not Captured', () => {
-      const initialState: PaymentState = {
-        status: PaymentStatus.AUTHORIZED,
-        targetState: PaymentStatus.CAPTURED,
-      };
+  describe('Terminal States', () => {
+    it('should not allow any transition from VOIDED', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.VOIDED);
 
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-
-      expect(
-        paymentStateMachine.refund(PaymentEvent.RefundSuccess),
-      ).toBeInstanceOf(Error);
-      expect(paymentStateMachine.getState()).toEqual(initialState);
-      expect(
-        paymentStateMachine.refund(PaymentEvent.RefundSuccess) as Error,
-      ).toEqual(new Error('Current state is not Captured'));
+      expect(() => sm.authorize(PaymentEvent.AUTHORIZE_SUCCESS)).toThrow();
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow();
+      expect(() => sm.void(PaymentEvent.VOID_SUCCESS)).toThrow();
+      expect(() => sm.refund(PaymentEvent.REFUND_SUCCESS)).toThrow();
     });
 
-    it('should be Refunded if Refund success', () => {
-      const paymentStateMachine = createPaymentStateMachine(initialState);
-      paymentStateMachine.authorize(PaymentEvent.AuthorizeSuccess);
-      paymentStateMachine.capture(PaymentEvent.CaptureSuccess);
-      paymentStateMachine.refund(PaymentEvent.RefundSuccess);
-      const state = paymentStateMachine.getState();
-      expect(state.status).toBe(PaymentStatus.REFUNDED);
+    it('should not allow any transition from REFUNDED', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.REFUNDED);
+
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow();
+      expect(() => sm.refund(PaymentEvent.REFUND_SUCCESS)).toThrow();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should throw clear error message on invalid transition', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.PENDING);
+
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow(
+        'Invalid transition: pending --CAPTURE_SUCCESS--> captured',
+      );
+    });
+
+    it('should throw HttpException)', () => {
+      const sm = createPaymentStateMachine(PaymentStatus.PENDING);
+
+      expect(() => sm.capture(PaymentEvent.CAPTURE_SUCCESS)).toThrow(
+        HttpException,
+      );
     });
   });
 });

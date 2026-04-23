@@ -1,6 +1,4 @@
-export enum CreateAuthorizationResponseStatus {
-  APPROVED = 'approved',
-}
+import { PaymentStatus } from '@payments/domain/constants';
 
 export class AuthorizationResponseDto {
   amount!: number;
@@ -8,5 +6,5 @@ export class AuthorizationResponseDto {
   createdAt!: string;
   currency!: string;
   expiresAt!: string;
-  status!: CreateAuthorizationResponseStatus;
+  status!: PaymentStatus.AUTHORIZED;
 }

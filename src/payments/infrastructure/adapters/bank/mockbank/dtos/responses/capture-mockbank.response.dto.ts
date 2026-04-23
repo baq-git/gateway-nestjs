@@ -1,5 +1,7 @@
+import { PaymentStatus } from '@payments/domain/constants';
+
 export enum CaptureResponseStatus {
-  CAPTURED = 'captured',
+  CAPTURED = PaymentStatus.CAPTURED,
 }
 
 export class CaptureResponseDto {
@@ -8,5 +10,5 @@ export class CaptureResponseDto {
   captureId!: string;
   capturedAt!: string;
   currency!: string;
-  status!: CaptureResponseStatus;
+  status!: PaymentStatus.CAPTURED;
 }

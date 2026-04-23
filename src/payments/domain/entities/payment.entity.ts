@@ -38,7 +38,7 @@ export class PaymentEntity {
     enum: PaymentStatus,
     default: PaymentStatus.PENDING,
   })
-  state: string;
+  state: PaymentStatus;
 
   @Column({ nullable: true })
   authorizationId: string;

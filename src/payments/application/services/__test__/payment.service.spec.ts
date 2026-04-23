@@ -5,16 +5,14 @@ import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { PaymentEvent } from '@domain/statemachine/payment.statemachine';
 import { PaymentEntity } from '@domain/entities/payment.entity';
 import { Repository, QueryRunner } from 'typeorm';
-import {
-  AuthorizationResponseDto,
-  CreateAuthorizationResponseStatus,
-} from '@infrastructure/adapters/bank/mockbank/dtos/responses/authorize-mockbank.response.dto';
+import { AuthorizationResponseDto } from '@infrastructure/adapters/bank/mockbank/dtos/responses/authorize-mockbank.response.dto';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { MockBankAdapter } from '@infrastructure/adapters/bank/mockbank/mockbank.adapter';
 import { CheckoutRequestDto } from '@application/dtos/request/payment.request.dto';
 import { REQUEST } from '@nestjs/core';
-import { HttpException } from '@nestjs/common';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { PaymentStatus } from '@domain/constants';
+import { CreateAuthorizationMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/authorize-mockbank.request.dto';
 
 describe('PaymentService', () => {
   let service: PaymentService;
@@ -41,8 +39,6 @@ describe('PaymentService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PaymentService,
-        // Repository,
-        // PaymentEntity,
         {
           provide: MockBankAdapter,
           useValue: mockBankPort,
@@ -85,12 +81,12 @@ describe('PaymentService', () => {
         createdAt: new Date().toString(),
         currency: 'USD',
         expiresAt: Date.now().toString(),
-        status: CreateAuthorizationResponseStatus.APPROVED,
+        status: PaymentStatus.AUTHORIZED,
       };
 
       mockStateMachine = {
         authorize: jest.fn(),
-        getState: jest.fn().mockReturnValue({ status: 'AUTHORIZED' }),
+        getState: jest.fn().mockReturnValue(PaymentStatus.AUTHORIZED),
       };
 
       jest
@@ -116,7 +112,7 @@ describe('PaymentService', () => {
       );
 
       expect(mockStateMachine.authorize).toHaveBeenCalledWith(
-        PaymentEvent.AuthorizeSuccess,
+        PaymentEvent.AUTHORIZE_SUCCESS,
       );
       expect(mockQueryRunner.manager.createQueryBuilder).toHaveBeenCalled();
       expect(result).toHaveProperty('id');
@@ -137,15 +133,7 @@ describe('PaymentService', () => {
 
       mockStateMachine = {
         authorize: jest.fn().mockImplementation(),
-        getState: jest.fn().mockReturnValue(
-          new HttpException(
-            `Invalid state transition: ${PaymentStatus.PENDING} → ${PaymentStatus.AUTHORIZED}`,
-            402,
-            {
-              cause: 'MockBank response status is not approved',
-            },
-          ),
-        ),
+        getState: jest.fn().mockReturnValue(PaymentStatus.PENDING),
       };
 
       jest
@@ -166,8 +154,9 @@ describe('PaymentService', () => {
       try {
         await service.authorize(validCheckoutRequest, mockQueryRunner);
       } catch (error) {
-        expect(error.getStatus()).toBe(402);
-        expect(error.response).toContain('Invalid state transition:');
+        expect(error.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
+        expect(error.response).toContain('Invalid State Transition:');
+        expect(error.response).toContain(mockStateMachine.authorize.name);
       }
     });
 
@@ -235,15 +224,14 @@ describe('PaymentService', () => {
         createdAt: new Date().toISOString(),
         currency: 'USD',
         expiresAt: '2028-10-01',
-        status: CreateAuthorizationResponseStatus.APPROVED,
+        status: PaymentStatus.AUTHORIZED,
       };
 
       mockBankPort.authorize.mockResolvedValue(mockBankResponse);
 
-      const mockState = { status: 'AUTHORIZED' };
       mockStateMachine = {
         authorize: jest.fn(),
-        getState: jest.fn().mockReturnValue(mockState),
+        getState: jest.fn().mockReturnValue(PaymentStatus.AUTHORIZED),
       };
 
       jest
@@ -270,7 +258,7 @@ describe('PaymentService', () => {
           amount: mockBankResponse.amount,
           currency: mockBankResponse.currency,
           authorizationId: mockBankResponse.authorizationId,
-          state: mockState.status, // Trạng thái lấy từ State Machine
+          state: PaymentStatus.AUTHORIZED, // Trạng thái lấy từ State Machine
           idempotencyKeys: expect.arrayContaining([
             'a3919f91-19b9-4bcd-95a4-e9276d956173',
           ]),

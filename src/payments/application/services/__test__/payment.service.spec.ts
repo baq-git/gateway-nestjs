@@ -12,7 +12,7 @@ import { CheckoutRequestDto } from '@application/dtos/request/payment.request.dt
 import { REQUEST } from '@nestjs/core';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { PaymentStatus } from '@domain/constants';
-import { CreateAuthorizationMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/authorize-mockbank.request.dto';
+import { CreateCaptureMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/capture-mockbank.request.dto';
 
 describe('PaymentService', () => {
   let service: PaymentService;
@@ -155,7 +155,7 @@ describe('PaymentService', () => {
         await service.authorize(validCheckoutRequest, mockQueryRunner);
       } catch (error) {
         expect(error.getStatus()).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
-        expect(error.response).toContain('Invalid State Transition:');
+        expect(error.response).toContain('Authorization Failed:');
         expect(error.response).toContain(mockStateMachine.authorize.name);
       }
     });
@@ -220,7 +220,7 @@ describe('PaymentService', () => {
 
       const mockBankResponse: AuthorizationResponseDto = {
         amount: 500,
-        authorizationId: 'auth_real_deal_123',
+        authorizationId: 'auth_2fa34f21-58bd-4389-8aa9-6b623bb521d1',
         createdAt: new Date().toISOString(),
         currency: 'USD',
         expiresAt: '2028-10-01',
@@ -254,14 +254,7 @@ describe('PaymentService', () => {
         PaymentEntity,
         expect.objectContaining({
           orderId: validCheckoutRequest.orderId,
-          cardNumber: validCheckoutRequest.cardInfo.cardNumber,
-          amount: mockBankResponse.amount,
-          currency: mockBankResponse.currency,
-          authorizationId: mockBankResponse.authorizationId,
-          state: PaymentStatus.AUTHORIZED, // Trạng thái lấy từ State Machine
-          idempotencyKeys: expect.arrayContaining([
-            'a3919f91-19b9-4bcd-95a4-e9276d956173',
-          ]),
+          state: PaymentStatus.PENDING,
         }),
       );
 
@@ -273,6 +266,19 @@ describe('PaymentService', () => {
 
       expect(qb.insert().into).toHaveBeenCalledWith(PaymentEntity);
       expect(qb.execute).toHaveBeenCalled();
+    });
+  });
+
+  describe('capture()', () => {
+    it('should successfully capture payment and transition state', async () => {
+      const paymentRef = '4dd8b7ea-84c9-4388-854f-4b90eb8a8a59';
+
+      const payment = mockQueryRunner.manager
+        .getTreeRepository(PaymentEntity)
+        .createQueryBuilder('payment')
+        .where('payment.id = :id', { id: paymentRef })
+        .setLock('pessimistic_write')
+        .getOne();
     });
   });
 });

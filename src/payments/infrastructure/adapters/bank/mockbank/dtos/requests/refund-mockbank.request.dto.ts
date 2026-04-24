@@ -1,6 +1,6 @@
 import { IsInt, IsString, IsNotEmpty, Min, Matches } from 'class-validator';
 
-export class CreateRefundRequestDto {
+export class CreateRefundMockBankRequestDto {
   @IsInt()
   @Min(1)
   amount!: number;

@@ -1,6 +1,4 @@
-export enum RefundResponseStatus {
-  REFUNDED = 'refunded',
-}
+import { PaymentStatus } from '@payments/domain/constants';
 
 export class RefundResponseDto {
   amount!: number;
@@ -8,5 +6,5 @@ export class RefundResponseDto {
   currency!: string;
   refundId!: string;
   refundedAt!: string;
-  status!: RefundResponseStatus;
+  status!: PaymentStatus.REFUNDED;
 }

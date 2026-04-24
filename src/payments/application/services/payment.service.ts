@@ -21,6 +21,8 @@ import { CreateAuthorizationMockBankRequestDto } from '@infrastructure/adapters/
 import { CheckoutRequestDto } from '../dtos/request/payment.request.dto';
 import { MockBankAdapter } from '@infrastructure/adapters/bank/mockbank/mockbank.adapter';
 import { CreateCaptureMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/capture-mockbank.request.dto';
+import { CreateVoidMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/void-mockbank.request.dto';
+import { CreateRefundMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/refund-mockbank.request.dto';
 
 @Injectable({ scope: Scope.REQUEST })
 export class PaymentService {
@@ -34,19 +36,28 @@ export class PaymentService {
   ) {}
 
   async authorize(input: CheckoutRequestDto, queryRunner: QueryRunner) {
+    const idempotencyKey = this.request.get('idempotency-key') as string;
+    const stateMachine = createPaymentStateMachine(PaymentStatus.PENDING);
+
+    const data: CreateAuthorizationMockBankRequestDto = {
+      amount: input.amount,
+      cardNumber: input.cardInfo.cardNumber,
+      cvv: input.cardInfo.cvv,
+      expiryMonth: input.cardInfo.expiryMonth,
+      expiryYear: input.cardInfo.expiryYear,
+    };
+
+    const paymentEntity = queryRunner.manager.create(PaymentEntity, {
+      id: randomUUID(),
+      customerId: input.customerId,
+      orderId: input.orderId,
+      cardNumber: input.cardInfo.cardNumber,
+      createdAt: Date.now(),
+      state: PaymentStatus.PENDING,
+      idempotencyKeys: [idempotencyKey],
+    });
+
     try {
-      const idempotencyKey = this.request.get('idempotency-key') as string;
-
-      const data: CreateAuthorizationMockBankRequestDto = {
-        amount: input.amount,
-        cardNumber: input.cardInfo.cardNumber,
-        cvv: input.cardInfo.cvv,
-        expiryMonth: input.cardInfo.expiryMonth,
-        expiryYear: input.cardInfo.expiryYear,
-      };
-
-      const stateMachine = createPaymentStateMachine(PaymentStatus.PENDING);
-
       const {
         status,
         currency,
@@ -55,101 +66,217 @@ export class PaymentService {
         createdAt: authorizedAt,
       } = await this.mockBank.authorize(data, idempotencyKey);
 
-      if (status === PaymentStatus.AUTHORIZED)
-        stateMachine.authorize(PaymentEvent.AUTHORIZE_SUCCESS);
-      else {
-        stateMachine.authorize(PaymentEvent.AUTHORIZE_FAILURE);
-      }
+      const event =
+        status === PaymentStatus.AUTHORIZED
+          ? PaymentEvent.AUTHORIZE_SUCCESS
+          : PaymentEvent.AUTHORIZE_FAILURE;
 
-      const currentState = stateMachine.getState();
+      stateMachine.authorize(event);
 
-      if (currentState !== PaymentStatus.AUTHORIZED) {
+      paymentEntity.state = stateMachine.getState();
+      paymentEntity.authorizationId = authorizationId;
+      paymentEntity.authorizedAt = new Date(authorizedAt);
+      paymentEntity.amount = amount;
+      paymentEntity.currency = currency;
+
+      if (stateMachine.getState() !== PaymentStatus.AUTHORIZED) {
         throw new HttpException(
-          `Invalid State Transition: Cannot perform action ${stateMachine.authorize.name} on payment in ${currentState}' state`,
+          `Authorization Failed: Cannot perform action ${stateMachine.authorize.name} on payment in ${stateMachine.getState()}' state `,
           HttpStatus.UNPROCESSABLE_ENTITY,
           {
             cause: {
-              authorizationId,
-              currentState,
+              authorizationId: paymentEntity.authorizationId,
+              currentState: stateMachine.getState(),
               action: stateMachine.authorize.name,
             },
           },
         );
       }
-
-      const paymentEntity = queryRunner.manager.create(PaymentEntity, {
-        id: randomUUID(),
-        orderId: input.orderId,
-        cardNumber: input.cardInfo.cardNumber,
-        amount,
-        currency,
-        state: currentState,
-        authorizationId,
-        authorizedAt,
-        createdAt: Date.now(),
-        idempotencyKeys: [idempotencyKey],
-      });
-
-      const result = await queryRunner.manager
-        .createQueryBuilder()
-        .insert()
-        .into(PaymentEntity)
-        .values([paymentEntity])
-        .returning('*')
-        .execute();
-
-      return result.generatedMaps[0];
     } catch (error) {
       throw error;
     }
+
+    const result = await queryRunner.manager
+      .createQueryBuilder()
+      .insert()
+      .into(PaymentEntity)
+      .values([paymentEntity])
+      .returning('*')
+      .execute();
+
+    return result.generatedMaps[0];
   }
 
-  // async capture(paymentReference: string, queryRunner: QueryRunner) {
-  //   try {
-  //     const idempotencyKey = this.request.get('idempotency-key') as string;
-  //
-  //     const lockedPayment = await queryRunner.manager
-  //       .getTreeRepository(PaymentEntity)
-  //       .createQueryBuilder('payment')
-  //       .where('payment.id = :id', { id: paymentReference })
-  //       .setLock('pessimistic_write')
-  //       .getOne();
-  //
-  //     if (!lockedPayment) {
-  //       throw new HttpException('Payment not found', HttpStatus.NOT_FOUND);
-  //     }
-  //
-  //     const { state, amount, authorizationId } = lockedPayment;
-  //
-  //     const stateMachine = createPaymentStateMachine(state);
-  //
-  //     const data: CreateCaptureMockBankRequestDto = {
-  //       amount,
-  //       authorizationId,
-  //     };
-  //
-  //     const { status, captureId, capturedAt } = await this.mockBank.capture(
-  //       data,
-  //       idempotencyKey,
-  //     );
-  //
-  //     const currentState = stateMachine.getState();
-  //
-  //     if (
-  //       currentState instanceof HttpException ||
-  //       currentState instanceof Error
-  //     ) {
-  //       throw currentState;
-  //     }
-  //
-  //     lockedPayment.state = currentState.status;
-  //     lockedPayment.captureId = captureId;
-  //     lockedPayment.capturedAt = new Date(capturedAt);
-  //     lockedPayment.updatedAt = new Date();
-  //
-  //     await queryRunner.manager.save(lockedPayment);
-  //   } catch (error) {
-  //     throw error;
-  // }
-  // }
+  async capture(paymentReference: string, queryRunner: QueryRunner) {
+    const idempotencyKey = this.request.get('idempotency-key') as string;
+
+    const lockedPayment = await queryRunner.manager
+      .getRepository(PaymentEntity)
+      .createQueryBuilder('payment')
+      .where('payment.id = :id', { id: paymentReference })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!lockedPayment) {
+      throw new HttpException('PAYMENT NOT FOUND', HttpStatus.NOT_FOUND);
+    }
+
+    const { state, amount, authorizationId } = lockedPayment;
+
+    const stateMachine = createPaymentStateMachine(state);
+
+    try {
+      const data: CreateCaptureMockBankRequestDto = {
+        amount,
+        authorizationId,
+      };
+
+      const { status, captureId, capturedAt } = await this.mockBank.capture(
+        data,
+        idempotencyKey,
+      );
+
+      const event =
+        status === PaymentStatus.CAPTURED
+          ? PaymentEvent.CAPTURE_SUCCESS
+          : PaymentEvent.CAPTURE_FAILURE;
+
+      stateMachine.capture(event);
+
+      if (stateMachine.getState() === PaymentStatus.CAPTURED) {
+        lockedPayment.captureId = captureId;
+        lockedPayment.capturedAt = new Date(capturedAt);
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        const code = error.getStatus();
+        // error code from bank
+        if (code >= 400 && code < 500) {
+          stateMachine.capture(PaymentEvent.CAPTURE_FAILURE);
+        } else {
+          throw error;
+        }
+      }
+    } finally {
+      lockedPayment.state = stateMachine.getState();
+      lockedPayment.updatedAt = new Date();
+
+      await queryRunner.manager.save(lockedPayment);
+    }
+  }
+
+  async void(paymentReference: string, queryRunner: QueryRunner) {
+    const idempotencyKey = this.request.get('idempotency-key') as string;
+
+    const lockedPayment = await queryRunner.manager
+      .getRepository(PaymentEntity)
+      .createQueryBuilder('payment')
+      .where('payment.id = :id', { id: paymentReference })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!lockedPayment) {
+      throw new HttpException('PAYMENT NOT FOUND', HttpStatus.NOT_FOUND);
+    }
+
+    const { state, authorizationId } = lockedPayment;
+
+    const stateMachine = createPaymentStateMachine(state);
+
+    try {
+      const data: CreateVoidMockBankRequestDto = {
+        authorizationId,
+      };
+
+      const { status, voidId, voidedAt } = await this.mockBank.void(
+        data,
+        idempotencyKey,
+      );
+
+      const event =
+        status === PaymentStatus.VOIDED
+          ? PaymentEvent.VOID_SUCCESS
+          : PaymentEvent.VOID_FAILURE;
+
+      stateMachine.void(event);
+
+      if (stateMachine.getState() === PaymentStatus.VOIDED) {
+        lockedPayment.voidId = voidId;
+        lockedPayment.voidedAt = new Date(voidedAt);
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        const code = error.getStatus();
+        // error code from bank
+        if (code >= 400 && code < 500) {
+          stateMachine.void(PaymentEvent.VOID_FAILURE);
+        } else {
+          throw error;
+        }
+      }
+    } finally {
+      lockedPayment.state = stateMachine.getState();
+      lockedPayment.updatedAt = new Date();
+
+      await queryRunner.manager.save(lockedPayment);
+    }
+  }
+
+  async refund(paymentReference: string, queryRunner: QueryRunner) {
+    const idempotencyKey = this.request.get('idempotency-key') as string;
+
+    const lockedPayment = await queryRunner.manager
+      .getRepository(PaymentEntity)
+      .createQueryBuilder('payment')
+      .where('payment.id = :id', { id: paymentReference })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (!lockedPayment) {
+      throw new HttpException('PAYMENT NOT FOUND', HttpStatus.NOT_FOUND);
+    }
+
+    const { state, captureId, amount } = lockedPayment;
+
+    const stateMachine = createPaymentStateMachine(state);
+
+    try {
+      const data: CreateRefundMockBankRequestDto = {
+        captureId,
+        amount,
+      };
+
+      const { status, refundId, refundedAt } = await this.mockBank.refund(
+        data,
+        idempotencyKey,
+      );
+
+      const event =
+        status === PaymentStatus.REFUNDED
+          ? PaymentEvent.REFUND_SUCCESS
+          : PaymentEvent.REFUND_FAILURE;
+
+      stateMachine.refund(event);
+
+      if (stateMachine.getState() === PaymentStatus.REFUNDED) {
+        lockedPayment.refundId = refundId;
+        lockedPayment.refundedAt = new Date(refundedAt);
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        const code = error.getStatus();
+        // error code from bank
+        if (code >= 400 && code < 500) {
+          stateMachine.refund(PaymentEvent.REFUND_FAILURE);
+        } else {
+          throw error;
+        }
+      }
+    } finally {
+      lockedPayment.state = stateMachine.getState();
+      lockedPayment.updatedAt = new Date();
+
+      await queryRunner.manager.save(lockedPayment);
+    }
+  }
 }

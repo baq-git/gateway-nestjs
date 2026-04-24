@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { PaymentStatus } from '../constants';
 
 export enum PaymentEvent {
@@ -48,7 +48,7 @@ export const createPaymentStateMachine = (
     if (!AllowedTransition[currentState].includes(event)) {
       throw new HttpException(
         `Invalid transition: ${currentState} --${event}--> ${newState}`,
-        402,
+        HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
 

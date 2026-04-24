@@ -1,7 +1,7 @@
 import { CreateAuthorizationMockBankRequestDto } from './mockbank/dtos/requests/authorize-mockbank.request.dto';
 import { CreateCaptureMockBankRequestDto } from './mockbank/dtos/requests/capture-mockbank.request.dto';
-import { CreateRefundRequestDto } from './mockbank/dtos/requests/refund-mockbank.request.dto';
-import { CreateVoidRequestDto } from './mockbank/dtos/requests/void-mockbank.request.dto';
+import { CreateRefundMockBankRequestDto } from './mockbank/dtos/requests/refund-mockbank.request.dto';
+import { CreateVoidMockBankRequestDto } from './mockbank/dtos/requests/void-mockbank.request.dto';
 import { AuthorizationResponseDto } from './mockbank/dtos/responses/authorize-mockbank.response.dto';
 import { CaptureResponseDto } from './mockbank/dtos/responses/capture-mockbank.response.dto';
 import { RefundResponseDto } from './mockbank/dtos/responses/refund-mockbank.response.dto';
@@ -18,11 +18,11 @@ export interface BankPort {
     idempotencyKey: string,
   ): Promise<CaptureResponseDto>;
   void(
-    data: CreateVoidRequestDto,
+    data: CreateVoidMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<VoidResponseDto>;
   refund(
-    data: CreateRefundRequestDto,
+    data: CreateRefundMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<RefundResponseDto>;
 }

@@ -1,10 +1,8 @@
-export enum VoidResponseStatus {
-  VOIDED = 'voided',
-}
+import { PaymentStatus } from '@payments/domain/constants';
 
 export class VoidResponseDto {
   authorizationId!: string;
-  status!: VoidResponseStatus;
+  status!: PaymentStatus.VOIDED;
   voidId!: string;
   voidedAt!: string;
 }

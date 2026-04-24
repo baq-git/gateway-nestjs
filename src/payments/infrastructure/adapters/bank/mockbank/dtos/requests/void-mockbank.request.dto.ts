@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, Matches } from 'class-validator';
 
-export class CreateVoidRequestDto {
+export class CreateVoidMockBankRequestDto {
   @IsString()
   @IsNotEmpty()
   @Matches(

@@ -1,16 +1,16 @@
-import { HttpException, Injectable } from '@nestjs/common';
-import { BankPort } from '../bank.port';
+import { Injectable } from '@nestjs/common';
 import { AuthorizationResponseDto } from './dtos/responses/authorize-mockbank.response.dto';
-import { CreateCaptureRequestDto } from './dtos/requests/capture-mockbank.request.dto';
+import { CreateCaptureMockBankRequestDto } from './dtos/requests/capture-mockbank.request.dto';
 import { CaptureResponseDto } from './dtos/responses/capture-mockbank.response.dto';
-import { CreateVoidRequestDto } from './dtos/requests/void-mockbank.request.dto';
+import { CreateVoidMockBankRequestDto } from './dtos/requests/void-mockbank.request.dto';
 import { VoidResponseDto } from './dtos/responses/void-mockbank.response.dto';
-import { CreateRefundRequestDto } from './dtos/requests/refund-mockbank.request.dto';
+import { CreateRefundMockBankRequestDto } from './dtos/requests/refund-mockbank.request.dto';
 import { RefundResponseDto } from './dtos/responses/refund-mockbank.response.dto';
 import { firstValueFrom } from 'rxjs';
 import { MockBankHttpService } from './mockbank.http.service';
 import { MockBankErrorMapper } from './mockbank.error-mapper';
 import { CreateAuthorizationMockBankRequestDto } from './dtos/requests/authorize-mockbank.request.dto';
+import { type BankPort } from '../bank.port';
 
 @Injectable()
 export class MockBankAdapter implements BankPort {
@@ -36,6 +36,7 @@ export class MockBankAdapter implements BankPort {
     data: CreateAuthorizationMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<AuthorizationResponseDto> {
+    console.log('authorize called');
     try {
       const result = await firstValueFrom(
         this.mockBankHttpService.post(`/api/v1/authorizations`, data, {
@@ -54,7 +55,7 @@ export class MockBankAdapter implements BankPort {
   }
 
   async capture(
-    data: CreateCaptureRequestDto,
+    data: CreateCaptureMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<CaptureResponseDto> {
     try {
@@ -75,7 +76,7 @@ export class MockBankAdapter implements BankPort {
   }
 
   async refund(
-    data: CreateRefundRequestDto,
+    data: CreateRefundMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<RefundResponseDto> {
     try {
@@ -96,7 +97,7 @@ export class MockBankAdapter implements BankPort {
   }
 
   async void(
-    data: CreateVoidRequestDto,
+    data: CreateVoidMockBankRequestDto,
     idempotencyKey: string,
   ): Promise<VoidResponseDto> {
     try {

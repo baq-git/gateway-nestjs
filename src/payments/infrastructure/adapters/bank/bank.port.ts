@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { CreateAuthorizationMockBankRequestDto } from './mockbank/dtos/requests/authorize-mockbank.request.dto';
 import { CreateCaptureMockBankRequestDto } from './mockbank/dtos/requests/capture-mockbank.request.dto';
 import { CreateRefundMockBankRequestDto } from './mockbank/dtos/requests/refund-mockbank.request.dto';

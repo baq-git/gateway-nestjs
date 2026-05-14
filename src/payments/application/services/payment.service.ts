@@ -5,10 +5,8 @@ import {
   Injectable,
   Scope,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { QueryRunner, Repository } from 'typeorm';
+import { QueryRunner } from 'typeorm';
 import { PaymentEntity } from '@domain/entities/payment.entity';
-import { type BankPort } from '@infrastructure/adapters/bank/bank.port';
 import { REQUEST } from '@nestjs/core';
 import { type Request } from 'express';
 import { PaymentStatus } from '@domain/constants';
@@ -23,12 +21,11 @@ import { MockBankAdapter } from '@infrastructure/adapters/bank/mockbank/mockbank
 import { CreateCaptureMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/capture-mockbank.request.dto';
 import { CreateVoidMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/void-mockbank.request.dto';
 import { CreateRefundMockBankRequestDto } from '@payments/infrastructure/adapters/bank/mockbank/dtos/requests/refund-mockbank.request.dto';
+import { type BankPort } from '@infrastructure/adapters/bank/bank.port';
 
 @Injectable({ scope: Scope.REQUEST })
 export class PaymentService {
   constructor(
-    @InjectRepository(PaymentEntity)
-    private readonly paymentRepository: Repository<PaymentEntity>,
     @Inject(MockBankAdapter)
     private readonly mockBank: BankPort,
     @Inject(REQUEST)
@@ -37,8 +34,9 @@ export class PaymentService {
 
   async authorize(input: CheckoutRequestDto, queryRunner: QueryRunner) {
     const idempotencyKey = this.request.get('idempotency-key') as string;
-    const stateMachine = createPaymentStateMachine(PaymentStatus.PENDING);
+    await this.checkOrderExist(queryRunner, input.orderId);
 
+    const stateMachine = createPaymentStateMachine(PaymentStatus.PENDING);
     const data: CreateAuthorizationMockBankRequestDto = {
       amount: input.amount,
       cardNumber: input.cardInfo.cardNumber,
@@ -53,7 +51,7 @@ export class PaymentService {
       orderId: input.orderId,
       cardNumber: input.cardInfo.cardNumber,
       createdAt: Date.now(),
-      state: PaymentStatus.PENDING,
+      state: stateMachine.getState(),
       idempotencyKeys: [idempotencyKey],
     });
 
@@ -73,28 +71,22 @@ export class PaymentService {
 
       stateMachine.authorize(event);
 
-      paymentEntity.state = stateMachine.getState();
-      paymentEntity.authorizationId = authorizationId;
-      paymentEntity.authorizedAt = new Date(authorizedAt);
-      paymentEntity.amount = amount;
-      paymentEntity.currency = currency;
-
-      if (stateMachine.getState() !== PaymentStatus.AUTHORIZED) {
-        throw new HttpException(
-          `Authorization Failed: Cannot perform action ${stateMachine.authorize.name} on payment in ${stateMachine.getState()}' state `,
-          HttpStatus.UNPROCESSABLE_ENTITY,
-          {
-            cause: {
-              authorizationId: paymentEntity.authorizationId,
-              currentState: stateMachine.getState(),
-              action: stateMachine.authorize.name,
-            },
-          },
-        );
+      if (status === PaymentStatus.AUTHORIZED) {
+        paymentEntity.authorizationId = authorizationId;
+        paymentEntity.authorizedAt = new Date(authorizedAt);
+        paymentEntity.amount = amount;
+        paymentEntity.currency = currency;
       }
     } catch (error) {
-      throw error;
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        stateMachine.authorize(PaymentEvent.AUTHORIZE_FAILURE);
+      } else {
+        throw error;
+      }
     }
+
+    paymentEntity.state = stateMachine.getState();
+    paymentEntity.updatedAt = new Date();
 
     const result = await queryRunner.manager
       .createQueryBuilder()
@@ -146,23 +138,18 @@ export class PaymentService {
       if (stateMachine.getState() === PaymentStatus.CAPTURED) {
         lockedPayment.captureId = captureId;
         lockedPayment.capturedAt = new Date(capturedAt);
+        lockedPayment.updatedAt = new Date();
       }
     } catch (error) {
-      if (error instanceof HttpException) {
-        const code = error.getStatus();
-        // error code from bank
-        if (code >= 400 && code < 500) {
-          stateMachine.capture(PaymentEvent.CAPTURE_FAILURE);
-        } else {
-          throw error;
-        }
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        stateMachine.capture(PaymentEvent.CAPTURE_FAILURE);
+      } else {
+        throw error;
       }
-    } finally {
-      lockedPayment.state = stateMachine.getState();
-      lockedPayment.updatedAt = new Date();
-
-      await queryRunner.manager.save(lockedPayment);
     }
+
+    lockedPayment.state = stateMachine.getState();
+    return await queryRunner.manager.save(lockedPayment);
   }
 
   async void(paymentReference: string, queryRunner: QueryRunner) {
@@ -203,23 +190,18 @@ export class PaymentService {
       if (stateMachine.getState() === PaymentStatus.VOIDED) {
         lockedPayment.voidId = voidId;
         lockedPayment.voidedAt = new Date(voidedAt);
+        lockedPayment.updatedAt = new Date();
       }
     } catch (error) {
-      if (error instanceof HttpException) {
-        const code = error.getStatus();
-        // error code from bank
-        if (code >= 400 && code < 500) {
-          stateMachine.void(PaymentEvent.VOID_FAILURE);
-        } else {
-          throw error;
-        }
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        stateMachine.void(PaymentEvent.VOID_FAILURE);
+      } else {
+        throw error;
       }
-    } finally {
-      lockedPayment.state = stateMachine.getState();
-      lockedPayment.updatedAt = new Date();
-
-      await queryRunner.manager.save(lockedPayment);
     }
+
+    lockedPayment.state = stateMachine.getState();
+    return await queryRunner.manager.save(lockedPayment);
   }
 
   async refund(paymentReference: string, queryRunner: QueryRunner) {
@@ -239,7 +221,6 @@ export class PaymentService {
     const { state, captureId, amount } = lockedPayment;
 
     const stateMachine = createPaymentStateMachine(state);
-
     try {
       const data: CreateRefundMockBankRequestDto = {
         captureId,
@@ -263,20 +244,29 @@ export class PaymentService {
         lockedPayment.refundedAt = new Date(refundedAt);
       }
     } catch (error) {
-      if (error instanceof HttpException) {
-        const code = error.getStatus();
-        // error code from bank
-        if (code >= 400 && code < 500) {
-          stateMachine.refund(PaymentEvent.REFUND_FAILURE);
-        } else {
-          throw error;
-        }
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        stateMachine.refund(PaymentEvent.REFUND_FAILURE);
+      } else {
+        throw error;
       }
-    } finally {
-      lockedPayment.state = stateMachine.getState();
-      lockedPayment.updatedAt = new Date();
+    }
 
-      await queryRunner.manager.save(lockedPayment);
+    lockedPayment.state = stateMachine.getState();
+    return await queryRunner.manager.save(lockedPayment);
+  }
+
+  private async checkOrderExist(queryRunner: QueryRunner, orderId: string) {
+    const existingPayment = await queryRunner.manager
+      .getRepository(PaymentEntity)
+      .findOne({ where: { orderId: orderId } });
+
+    if (!existingPayment) return;
+
+    if (existingPayment) {
+      throw new HttpException(
+        `Payment for this order already exists with status: ${existingPayment.state}`,
+        HttpStatus.CONFLICT,
+      );
     }
   }
 }

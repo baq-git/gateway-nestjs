@@ -55,22 +55,6 @@ export function IsLuhhValidated(
   };
 }
 
-export class CheckoutRequestDto {
-  @IsString()
-  orderId!: string;
-
-  @IsString()
-  customerId!: string;
-
-  @IsNumber()
-  @IsPositive()
-  amount!: number;
-
-  @IsNotEmptyObject()
-  @ValidateNested()
-  cardInfo: RawCardDto;
-}
-
 class RawCardDto {
   @IsCreditCard()
   @IsLuhhValidated('cardNumber', { message: 'Card Number is invalid' })
@@ -89,4 +73,20 @@ class RawCardDto {
   @IsString()
   @Length(3, 4)
   cvv: string;
+}
+
+export class CheckoutRequestDto {
+  @IsString()
+  orderId!: string;
+
+  @IsString()
+  customerId!: string;
+
+  @IsNumber()
+  @IsPositive()
+  amount!: number;
+
+  @IsNotEmptyObject()
+  @ValidateNested()
+  cardInfo: RawCardDto;
 }

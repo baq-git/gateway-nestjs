@@ -15,12 +15,12 @@ describe('Payment State Machine', () => {
       expect(sm.getState()).toBe(PaymentStatus.AUTHORIZED);
     });
 
-    it('should stay in PENDING on AUTHORIZE_FAILURE', () => {
+    it('should transition to FAILED on AUTHORIZE_FAILURE', () => {
       const sm = createPaymentStateMachine(PaymentStatus.PENDING);
 
       sm.authorize(PaymentEvent.AUTHORIZE_FAILURE);
 
-      expect(sm.getState()).toBe(PaymentStatus.PENDING);
+      expect(sm.getState()).toBe(PaymentStatus.FAILED);
     });
 
     it('should throw error on invalid transition (e.g. CAPTURE_SUCCESS)', () => {

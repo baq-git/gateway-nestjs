@@ -27,6 +27,7 @@ const AllowedTransition: Record<PaymentStatus, PaymentEvent[]> = {
     PaymentEvent.REFUND_SUCCESS,
     PaymentEvent.REFUND_FAILURE,
   ],
+  [PaymentStatus.FAILED]: [],
   [PaymentStatus.VOIDED]: [],
   [PaymentStatus.REFUNDED]: [],
 };
@@ -44,11 +45,22 @@ export const createPaymentStateMachine = (
 ): PaymentStateMachine => {
   let currentState = initialState;
 
+  if (currentState === PaymentStatus.FAILED) {
+    throw new HttpException(
+      'Payment Status was not Authorized',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
+  }
+
   const transition = (event: PaymentEvent, newState: PaymentStatus): void => {
-    if (!AllowedTransition[currentState].includes(event)) {
+    const transitions = AllowedTransition[currentState];
+    if (!transitions.includes(event)) {
       throw new HttpException(
         `Invalid transition: ${currentState} --${event}--> ${newState}`,
         HttpStatus.UNPROCESSABLE_ENTITY,
+        {
+          cause: initialState,
+        },
       );
     }
 
@@ -62,7 +74,7 @@ export const createPaymentStateMachine = (
         event,
         event === PaymentEvent.AUTHORIZE_SUCCESS
           ? PaymentStatus.AUTHORIZED
-          : PaymentStatus.PENDING,
+          : PaymentStatus.FAILED,
       ),
     capture: (event) =>
       transition(

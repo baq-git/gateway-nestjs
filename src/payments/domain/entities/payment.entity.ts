@@ -2,7 +2,6 @@ import {
   Check,
   Column,
   Entity,
-  Index,
   JoinColumn,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -11,7 +10,6 @@ import { IdempotencyKeyEntity } from './idempotency-keys.entity';
 import { PaymentStatus } from '../constants';
 
 @Entity('payments')
-@Index('idx_customer_state', ['cardNumber', 'state'])
 @Check('amount > 0')
 @Check("currency = 'USD'")
 export class PaymentEntity {
